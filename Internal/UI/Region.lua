@@ -38,21 +38,21 @@ local ScrollPad = 3.0
 local ScrollBarSize = 10.0
 local WheelX = 0.0
 local WheelY = 0.0
-local WheelSpeed = 3.0
+local WheelSpeed = 30.0
 local HotInstance = nil
 local WheelInstance = nil
 local ScrollInstance = nil
 
 local function GetXScrollSize(Instance)
 	if Instance ~= nil then
-		return math.max(Instance.W - (Instance.ContentW - Instance.W), 10.0)
+		return math.max(Instance.W * (Instance.W / Instance.ContentW), 10.0)
 	end
 	return 0.0
 end
 
 local function GetYScrollSize(Instance)
 	if Instance ~= nil then
-		return math.max(Instance.H - (Instance.ContentH - Instance.H), 10.0)
+		return math.max(Instance.H * ( Instance.H / Instance.ContentH), 10.0)
 	end
 	return 0.0
 end
