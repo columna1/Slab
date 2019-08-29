@@ -708,6 +708,7 @@ local function UpdateTextObject(Instance, Width, Align, Highlight, BaseColor)
 			local TextH = Text.GetHeight()
 			local Top = TY - TextH * 2
 			local Bottom = TY + Instance.H + TextH * 2
+			if not Instance.Lines then Instance.Lines = {} end
 			local H = #Instance.Lines * TextH
 			local TopLineNo = math.max(math.floor((Top / H) * #Instance.Lines), 1)
 			local BottomLineNo = math.min(math.floor((Bottom / H) * #Instance.Lines), #Instance.Lines)
@@ -889,7 +890,9 @@ function Input.Begin(Id, Options)
 	end
 
 	if Focused ~= Instance then
-		if Options.MultiLine and #Options.Text ~= #Instance.Text then
+		--if not Options.Text then Options.Text = "f" end
+		
+		if Options.MultiLine and Options.Text and #Options.Text ~= #Instance.Text then
 			Instance.Lines = nil
 		end
 
