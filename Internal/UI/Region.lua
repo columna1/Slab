@@ -59,7 +59,7 @@ end
 
 local function GetYScrollSize(instance)
 	if instance ~= nil then
-		return max(Instance.H * ( instance.H / instance.ContentH), 10)
+		return max(instance.H * ( instance.H / instance.ContentH), 10)
 	end
 	return 0
 end
