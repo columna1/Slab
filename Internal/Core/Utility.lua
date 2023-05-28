@@ -2,7 +2,7 @@
 
 MIT License
 
-Copyright (c) 2019 Mitchell Davis <coding.jackalope@gmail.com>
+Copyright (c) 2019-2021 Love2D Community <love2d.org>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -26,15 +26,23 @@ SOFTWARE.
 
 local Utility = {}
 
-function Utility.MakeColor(Color)
-	local Copy = {0.0, 0.0, 0.0, 1.0}
-	if Color ~= nil then
-		Copy[1] = Color[1]
-		Copy[2] = Color[2]
-		Copy[3] = Color[3]
-		Copy[4] = Color[4]
+local abs = math.abs
+local remove = table.remove
+
+function Utility.MakeColor(color, target)
+	target = target or {}
+	if color then
+		target[1] = color[1]
+		target[2] = color[2]
+		target[3] = color[3]
+		target[4] = color[4]
+	else
+		target[1] = 0
+		target[2] = 0
+		target[3] = 0
+		target[4] = 1
 	end
-	return Copy
+	return target
 end
 
 function Utility.HSVtoRGB(H, S, V)
@@ -86,7 +94,7 @@ function Utility.RGBtoHSV(R, G, B)
 	end
 
 	local Chroma = R - (G < B and G or B)
-	local H = math.abs(K + (G - B) / (6.0 * Chroma + 1e-20))
+	local H = abs(K + (G - B) / (6.0 * Chroma + 1e-20))
 	local S = Chroma / (R + 1e-20)
 	local V = R
 
@@ -106,7 +114,7 @@ end
 function Utility.Remove(Table, Value)
 	for I, V in ipairs(Table) do
 		if V == Value then
-			table.remove(Table, I)
+			remove(Table, I)
 			break
 		end
 	end
@@ -174,6 +182,14 @@ end
 
 function Utility.IsOSX()
 	return love.system.getOS() == "OS X"
+end
+
+function Utility.IsMobile()
+	return love.system.getOS() == "Android" or love.system.getOS() == "iOS"
+end
+
+function Utility.Clamp(Value, Min, Max)
+	return Value < Min and Min or (Value > Max and Max or Value)
 end
 
 return Utility

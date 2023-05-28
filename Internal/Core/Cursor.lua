@@ -2,7 +2,7 @@
 
 MIT License
 
-Copyright (c) 2019 Mitchell Davis <coding.jackalope@gmail.com>
+Copyright (c) 2019-2021 Love2D Community <love2d.org>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -24,9 +24,14 @@ SOFTWARE.
 
 --]]
 
+local Utility = require(SLAB_PATH .. '.Internal.Core.Utility')
+
 local Cursor = {}
 
-local State = 
+local min = math.min
+local max = math.max
+
+local State =
 {
 	X = 0.0,
 	Y = 0.0,
@@ -46,6 +51,8 @@ local State =
 	PrevLineY = 0.0,
 	PrevLineH = 0.0
 }
+
+local Stack = {}
 
 function Cursor.SetPosition(X, Y)
 	State.PrevX = State.X
@@ -153,8 +160,8 @@ function Cursor.SetItemBounds(X, Y, W, H)
 	if State.LineY == 0.0 then
 		State.LineY = Y
 	end
-	State.LineY = math.min(State.LineY, Y)
-	State.LineH = math.max(State.LineH, H)
+	State.LineY = min(State.LineY, Y)
+	State.LineH = max(State.LineH, H)
 end
 
 function Cursor.GetItemBounds()
@@ -202,6 +209,27 @@ end
 
 function Cursor.PadY()
 	return State.PadY
+end
+
+function Cursor.Indent(Width)
+	State.AnchorX = State.AnchorX + Width
+	State.X = State.AnchorX
+end
+
+function Cursor.Unindent(Width)
+	Cursor.Indent(-Width)
+end
+
+function Cursor.PushContext()
+	table.insert(Stack, 1, Utility.Copy(State))
+end
+
+function Cursor.PopContext()
+	if #Stack == 0 then
+		return
+	end
+
+	State = table.remove(Stack, 1)
 end
 
 return Cursor

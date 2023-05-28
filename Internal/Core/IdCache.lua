@@ -24,12 +24,27 @@ SOFTWARE.
 
 --]]
 
--- This file is for running a project within the Slab folder. This file
--- should not be used when using the Slab folder within another project.
-if SLAB_PATH == nil then
-	SLAB_PATH = (...):match("(.-)[^%.]+$") 
+local IdCache = {}
+IdCache.__index = IdCache
+
+function IdCache:get(parentId, id)
+	local pId = self._ids[parentId]
+	local resultId = pId and pId[id]
+
+	if resultId then return resultId end
+
+	resultId = ("%s.%s"):format(parentId, id)
+	if pId then
+		pId[id] = resultId
+	else
+		self._ids[parentId] = { [id] = resultId }
+	end
+
+	return resultId
 end
 
-local Slab = require(SLAB_PATH .. '.API')
-
-return Slab
+return function()
+	return setmetatable({
+		_ids = {}
+	}, IdCache)
+end

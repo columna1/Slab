@@ -2,7 +2,7 @@
 
 MIT License
 
-Copyright (c) 2019 Mitchell Davis <coding.jackalope@gmail.com>
+Copyright (c) 2019-2021 Love2D Community <love2d.org>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -23,6 +23,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 --]]
+
+local insert = table.insert
+local format = string.format
+local min = math.min
 
 local Cursor = require(SLAB_PATH .. '.Internal.Core.Cursor')
 local DrawCommands = require(SLAB_PATH .. '.Internal.Core.DrawCommands')
@@ -60,7 +64,7 @@ function Tooltip.Begin(Tip)
 
 	if AccumDisplayTime > TooltipTime then
 		local X, Y = Mouse.Position()
-		Alpha = math.min(Alpha + DeltaTime * 4.0, 1.0)
+		Alpha = min(Alpha + DeltaTime * 4.0, 1.0)
 		local BgColor = Utility.MakeColor(Style.WindowBackgroundColor)
 		local TextColor = Utility.MakeColor(Style.TextColor)
 		BgColor[4] = Alpha
@@ -81,9 +85,10 @@ function Tooltip.Begin(Tip)
 			AllowFocus = false,
 			Layer = 'ContextMenu',
 			ResetWindowSize = ResetSize,
-			CanObstruct = false
+			CanObstruct = false,
+			NoSavedSettings = true
 		})
-		Text.Begin(Tip, {Color = TextColor})
+		Text.BeginFormatted(Tip, {Color = TextColor})
 		OffsetY = Window.GetHeight()
 		Window.End()
 		LayoutManager.End()
@@ -96,10 +101,10 @@ function Tooltip.GetDebugInfo()
 	local Info = {}
 
 	local Elapsed = love.timer.getTime() - LastDisplayTime
-	table.insert(Info, string.format("Time: %.2f", AccumDisplayTime))
-	table.insert(Info, string.format("Is Visible: %s", tostring(AccumDisplayTime > TooltipTime and Elapsed <= TooltipExpireTime)))
-	table.insert(Info, string.format("Time to Display: %.2f", TooltipTime))
-	table.insert(Info, string.format("Expire Time: %f", TooltipExpireTime))
+	insert(Info, format("Time: %.2f", AccumDisplayTime))
+	insert(Info, format("Is Visible: %s", tostring(AccumDisplayTime > TooltipTime and Elapsed <= TooltipExpireTime)))
+	insert(Info, format("Time to Display: %.2f", TooltipTime))
+	insert(Info, format("Expire Time: %f", TooltipExpireTime))
 
 	return Info
 end

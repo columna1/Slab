@@ -2,7 +2,7 @@
 
 MIT License
 
-Copyright (c) 2019 Mitchell Davis <coding.jackalope@gmail.com>
+Copyright (c) 2019-2021 Love2D Community <love2d.org>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -24,92 +24,113 @@ SOFTWARE.
 
 --]]
 
+local insert = table.insert
+
+local Common = require(SLAB_PATH .. '.Internal.Input.Common')
+local Stats = require(SLAB_PATH .. '.Internal.Core.Stats')
+local Utility = require(SLAB_PATH .. '.Internal.Core.Utility')
+
 local Keyboard = {}
 
-local State =
-{
-	Pressed = {},
-	WasPressed = {},
-	LastPressed = nil,
-	PressedTime = 0.0,
-	ShouldRepeat = false
-}
+local KeyPressedFn = nil
+local KeyReleasedFn = nil
+local Events = {}
+local Keys = {}
 
-local RepeatDelay = 0.6
-local RepeatTime = 0.075
+local function PushEvent(Type, Key, Scancode, IsRepeat)
+	insert(Events, {
+		Type = Type,
+		Key = Key,
+		Scancode = Scancode,
+		IsRepeat = IsRepeat,
+		Frame = Stats.GetFrameNumber()
+	})
+end
 
-local function InsertKey(Key)
-	if State.Pressed[Key] == nil then
-		State.Pressed[Key] = love.keyboard.isDown(Key)
-		State.WasPressed[Key] = false
+local function OnKeyPressed(Key, Scancode, IsRepeat)
+	PushEvent(Common.Event.Pressed, Key, Scancode, IsRepeat)
+
+	if KeyPressedFn ~= nil then
+		KeyPressedFn(Key, Scancode, IsRepeat)
+	end
+end
+
+local function OnKeyReleased(Key, Scancode)
+	PushEvent(Common.Event.Released, Key, Scancode, false)
+
+	if KeyReleasedFn ~= nil then
+		KeyReleasedFn(Key, Scancode)
+	end
+end
+
+local function ProcessEvents()
+	Keys = {}
+
+	-- Soft keyboards found on mobile/tablet devices will push keypressed/keyreleased events when the user
+	-- releases from the pressed key. All released events pushed as the same frame as the pressed events will be
+	-- pushed to the events table for the next frame to process.
+	local NextEvents = {}
+
+	for I, V in ipairs(Events) do
+		if Keys[V.Scancode] == nil then
+			Keys[V.Scancode] = {}
+		end
+
+		local Key = Keys[V.Scancode]
+
+		if Utility.IsMobile() and V.Type == Common.Event.Released and Key.Frame == V.Frame then
+			V.Frame = V.Frame + 1
+			insert(NextEvents, V)
+		else
+			Key.Type = V.Type
+			Key.Key = V.Key
+			Key.Scancode = V.Scancode
+			Key.IsRepeat = V.IsRepeat
+			Key.Frame = V.Frame
+		end
+	end
+
+	Events = NextEvents
+end
+
+Keyboard.OnKeyPressed = OnKeyPressed;
+Keyboard.OnKeyReleased = OnKeyReleased;
+
+function Keyboard.Initialize(Args, dontInterceptEventHandlers)
+	if not dontInterceptEventHandlers then
+		KeyPressedFn = love.handlers['keypressed']
+		KeyReleasedFn = love.handlers['keyreleased']
+		love.handlers['keypressed'] = OnKeyPressed
+		love.handlers['keyreleased'] = OnKeyReleased
 	end
 end
 
 function Keyboard.Update()
-	for K, V in pairs(State.Pressed) do
-		State.WasPressed[K] = State.Pressed[K]
-		State.Pressed[K] = love.keyboard.isDown(K)
-
-		if Keyboard.IsPressed(K) then
-			State.LastPressed = K
-			State.PressedTime = love.timer.getTime()
-		end
-	end
-
-	if State.LastPressed ~= nil then
-		if not Keyboard.IsDown(State.LastPressed) then
-			State.LastPressed = nil
-			State.ShouldRepeat = false
-		end
-
-		local Elapsed = love.timer.getTime() - State.PressedTime
-		local Reset = false
-
-		if not State.ShouldRepeat then
-			if Elapsed >= RepeatDelay then
-				Reset = true
-				State.ShouldRepeat = true
-			end
-		else
-			if Elapsed >= RepeatTime then
-				Reset = true
-			end
-		end
-
-		if Reset then
-			State.PressedTime = love.timer.getTime()
-			State.Pressed[State.LastPressed] = false
-			State.WasPressed[State.LastPressed] = false
-		end
-	end
+	ProcessEvents()
 end
 
-function Keyboard.IsPressed(Key, CancelRepeat)
-	InsertKey(Key)
-	if Key == State.LastPressed and CancelRepeat then
-		State.LastPressed = nil
+function Keyboard.IsPressed(Key)
+	local Item = Keys[Key]
+
+	if Item == nil then
+		return false
 	end
-	return State.Pressed[Key] and not State.WasPressed[Key]
+
+	return Item.Type == Common.Event.Pressed
 end
 
 function Keyboard.IsReleased(Key)
-	InsertKey(Key)
-	return not State.Pressed[Key] and State.WasPressed[Key]
+	local Item = Keys[Key]
+
+	if Item == nil then
+		return false
+	end
+
+	return Item.Type == Common.Event.Released
 end
 
 function Keyboard.IsDown(Key)
-	InsertKey(Key)
-	return State.Pressed[Key] or love.keyboard.isDown(Key)
-end
-
-function Keyboard.Keys()
-	local Result = {}
-
-	for K, V in pairs(State.Pressed) do
-		table.insert(Result, K)
-	end
-
-	return Result
+	return love.keyboard.isScancodeDown(Key)
 end
 
 return Keyboard

@@ -2,7 +2,7 @@
 
 MIT License
 
-Copyright (c) 2019 Mitchell Davis <coding.jackalope@gmail.com>
+Copyright (c) 2019-2021 Love2D Community <love2d.org>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -23,6 +23,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 --]]
+
+local ceil = math.ceil
+local max = math.max
+local min = math.min
+local insert = table.insert
+local unpack = table.unpack
 
 local Button = require(SLAB_PATH .. '.Internal.UI.Button')
 local Cursor = require(SLAB_PATH .. '.Internal.Core.Cursor')
@@ -56,16 +62,26 @@ local AlphaFocused = false
 local CurrentColor = {1.0, 1.0, 1.0, 1.0}
 local ColorH = 25.0
 
+local function IsEqual(A, B)
+	for I, V in ipairs(A) do
+		if V ~= B[I] then
+			return false
+		end
+	end
+
+	return true
+end
+
 local function InputColor(Component, Value, OffsetX)
 	local Changed = false
 	Text.Begin(string.format("%s ", Component))
 	Cursor.SameLine()
 	Cursor.SetRelativeX(OffsetX)
-	if Input.Begin('ColorPicker_' .. Component, {W = 40.0, NumbersOnly = true, Text = tostring(math.ceil(Value * 255)), ReturnOnText = false}) then
+	if Input.Begin('ColorPicker_' .. Component, {W = 40.0, NumbersOnly = true, Text = tostring(ceil(Value * 255)), ReturnOnText = false}) then
 		local NewValue = tonumber(Input.GetText())
 		if NewValue ~= nil then
-			NewValue = math.max(NewValue, 0)
-			NewValue = math.min(NewValue, 255)
+			NewValue = max(NewValue, 0)
+			NewValue = min(NewValue, 255)
 			Value = NewValue / 255
 			Changed = true
 		end
@@ -142,7 +158,7 @@ local function InitializeSaturationMeshes()
 				}
 
 				local NewMesh = love.graphics.newMesh(Verts)
-				table.insert(SaturationMeshes, NewMesh)
+				insert(SaturationMeshes, NewMesh)
 
 				X = X + Size
 			end
@@ -200,7 +216,7 @@ local function InitializeTintMeshes()
 			}
 
 			local NewMesh = love.graphics.newMesh(Verts)
-			table.insert(TintMeshes, NewMesh)
+			insert(TintMeshes, NewMesh)
 
 			Y = Y + TintH / Step
 		end
@@ -239,6 +255,9 @@ end
 function ColorPicker.Begin(Options)
 	Options = Options == nil and {} or Options
 	Options.Color = Options.Color == nil and {1.0, 1.0, 1.0, 1.0} or Options.Color
+	Options.Refresh = Options.Refresh == nil and false or Options.Refresh
+	Options.X = Options.X == nil and nil or Options.X
+	Options.Y = Options.Y == nil and nil or Options.Y
 
 	if SaturationMeshes == nil then
 		InitializeSaturationMeshes()
@@ -252,21 +271,21 @@ function ColorPicker.Begin(Options)
 		InitializeAlphaMesh()
 	end
 
-	local DeltaVisibleTime = love.timer.getTime() - Window.GetLastVisibleTime('ColorPicker')
-	if DeltaVisibleTime > 1.0 then
-		CurrentColor[1] = Options.Color[1]
-		CurrentColor[2] = Options.Color[2]
-		CurrentColor[3] = Options.Color[3]
-		CurrentColor[4] = Options.Color[4]
+	Window.Begin('ColorPicker', {Title = "Color Picker", X = Options.X, Y = Options.Y})
+
+	if Window.IsAppearing() or Options.Refresh then
+		CurrentColor[1] = Options.Color[1] or 0.0
+		CurrentColor[2] = Options.Color[2] or 0.0
+		CurrentColor[3] = Options.Color[3] or 0.0
+		CurrentColor[4] = Options.Color[4] or 1.0
 		UpdateSaturationColors()
 	end
-
-	Window.Begin('ColorPicker', {Title = "Color Picker"})
 
 	local X, Y = Cursor.GetPosition()
 	local MouseX, MouseY = Window.GetMousePosition()
 	local H, S, V = Utility.RGBtoHSV(CurrentColor[1], CurrentColor[2], CurrentColor[3])
 	local UpdateColor = false
+	local MouseClicked = Mouse.IsClicked(1) and not Window.IsObstructedAtMouse()
 
 	if SaturationMeshes ~= nil then
 		for I, V in ipairs(SaturationMeshes) do
@@ -277,7 +296,7 @@ function ColorPicker.Begin(Options)
 
 		local UpdateSaturation = false
 		if X <= MouseX and MouseX < X + SaturationSize and Y <= MouseY and MouseY < Y + SaturationSize then
-			if Mouse.IsClicked(1) then
+			if MouseClicked then
 				SaturationFocused = true
 				UpdateSaturation = true
 			end
@@ -288,11 +307,11 @@ function ColorPicker.Begin(Options)
 		end
 
 		if UpdateSaturation then
-			local CanvasX = math.max(MouseX - X, 0)
-			CanvasX = math.min(CanvasX, SaturationSize)
+			local CanvasX = max(MouseX - X, 0)
+			CanvasX = min(CanvasX, SaturationSize)
 
-			local CanvasY = math.max(MouseY - Y, 0)
-			CanvasY = math.min(CanvasY, SaturationSize)
+			local CanvasY = max(MouseY - Y, 0)
+			CanvasY = min(CanvasY, SaturationSize)
 
 			S = CanvasX / SaturationSize
 			V = 1 - (CanvasY / SaturationSize)
@@ -316,7 +335,7 @@ function ColorPicker.Begin(Options)
 
 		local UpdateTint = false
 		if X <= MouseX and MouseX < X + TintW and Y <= MouseY and MouseY < Y + TintH then
-			if Mouse.IsClicked(1) then
+			if MouseClicked then
 				TintFocused = true
 				UpdateTint = true
 			end
@@ -327,8 +346,8 @@ function ColorPicker.Begin(Options)
 		end
 
 		if UpdateTint then
-			local CanvasY = math.max(MouseY - Y, 0)
-			CanvasY = math.min(CanvasY, TintH)
+			local CanvasY = max(MouseY - Y, 0)
+			CanvasY = min(CanvasY, TintH)
 
 			H = CanvasY / TintH
 
@@ -344,7 +363,7 @@ function ColorPicker.Begin(Options)
 
 		local UpdateAlpha = false
 		if X <= MouseX and MouseX < X + AlphaW and Y <= MouseY and MouseY < Y + AlphaH then
-			if Mouse.IsClicked(1) then
+			if MouseClicked then
 				AlphaFocused = true
 				UpdateAlpha = true
 			end
@@ -355,8 +374,8 @@ function ColorPicker.Begin(Options)
 		end
 
 		if UpdateAlpha then
-			local CanvasY = math.max(MouseY - Y, 0)
-			CanvasY = math.min(CanvasY, AlphaH)
+			local CanvasY = max(MouseY - Y, 0)
+			CanvasY = min(CanvasY, AlphaH)
 
 			CurrentColor[4] = 1.0 - CanvasY / AlphaH
 
@@ -366,7 +385,7 @@ function ColorPicker.Begin(Options)
 		local A = 1.0 - CurrentColor[4]
 		local AlphaY = A * AlphaH
 		DrawCommands.Line(X, Y + AlphaY, X + AlphaW, Y + AlphaY, 2.0, {A, A, A, 1.0})
-		
+
 		Y = Y + AlphaH + Cursor.PadY()
 	end
 
@@ -406,7 +425,7 @@ function ColorPicker.Begin(Options)
 	local ColorW = (WinX + WinW) - ColorX
 	Cursor.SetPosition(ColorX, Y)
 	Image.Begin('ColorPicker_CurrentAlpha', {
-		Path = SLAB_PATH .. "/Internal/Resources/Textures/Transparency.png",
+		Path = SLAB_FILE_PATH .. "/Internal/Resources/Textures/Transparency.png",
 		SubW = ColorW,
 		SubH = ColorH,
 		WrapH = "repeat",
@@ -422,7 +441,7 @@ function ColorPicker.Begin(Options)
 
 	Cursor.SetPosition(ColorX, Y)
 	Image.Begin('ColorPicker_CurrentAlpha', {
-		Path = SLAB_PATH .. "/Internal/Resources/Textures/Transparency.png",
+		Path = SLAB_FILE_PATH .. "/Internal/Resources/Textures/Transparency.png",
 		SubW = ColorW,
 		SubH = ColorH,
 		WrapH = "repeat",
@@ -444,15 +463,15 @@ function ColorPicker.Begin(Options)
 	Cursor.NewLine()
 
 	LayoutManager.Begin('ColorPicker_Buttons_Layout', {AlignX = 'right'})
-	local Result = {Button = "", Color = Utility.MakeColor(CurrentColor)}
+	local Result = {Button = 0, Color = Utility.MakeColor(CurrentColor)}
 	if Button.Begin("OK") then
-		Result.Button = "OK"
+		Result.Button = 1
 	end
 
 	LayoutManager.SameLine()
 
 	if Button.Begin("Cancel") then
-		Result.Button = "Cancel"
+		Result.Button = -1
 		Result.Color = Utility.MakeColor(Options.Color)
 	end
 	LayoutManager.End()

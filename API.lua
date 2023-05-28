@@ -2,7 +2,7 @@
 
 MIT License
 
-Copyright (c) 2019 Mitchell Davis <coding.jackalope@gmail.com>
+Copyright (c) 2019-2021 Love2D Community <love2d.org>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -25,21 +25,31 @@ SOFTWARE.
 --]]
 
 if SLAB_PATH == nil then
-	SLAB_PATH = (...):match("(.-)[^%.]+$") 
+	SLAB_PATH = (...):match("(.-)[^%.]+$")
 end
+
+SLAB_FILE_PATH = debug.getinfo(1, 'S').source:match("^@(.+)/")
+SLAB_FILE_PATH = SLAB_FILE_PATH == nil and "" or SLAB_FILE_PATH
+local StatsData = {}
+local PrevStatsData = {}
 
 local Button = require(SLAB_PATH .. '.Internal.UI.Button')
 local CheckBox = require(SLAB_PATH .. '.Internal.UI.CheckBox')
 local ColorPicker = require(SLAB_PATH .. '.Internal.UI.ColorPicker')
 local ComboBox = require(SLAB_PATH .. '.Internal.UI.ComboBox')
+local Config = require(SLAB_PATH .. '.Internal.Core.Config')
 local Cursor = require(SLAB_PATH .. '.Internal.Core.Cursor')
+local Scale = require(SLAB_PATH .. ".Internal.Core.Scale")
 local Dialog = require(SLAB_PATH .. '.Internal.UI.Dialog')
+local Dock = require(SLAB_PATH .. '.Internal.UI.Dock')
 local DrawCommands = require(SLAB_PATH .. '.Internal.Core.DrawCommands')
+local FileSystem = require(SLAB_PATH .. '.Internal.Core.FileSystem')
 local Image = require(SLAB_PATH .. '.Internal.UI.Image')
 local Input = require(SLAB_PATH .. '.Internal.UI.Input')
 local Keyboard = require(SLAB_PATH .. '.Internal.Input.Keyboard')
 local LayoutManager = require(SLAB_PATH .. '.Internal.UI.LayoutManager')
 local ListBox = require(SLAB_PATH .. '.Internal.UI.ListBox')
+local Messages = require(SLAB_PATH .. '.Internal.Core.Messages')
 local Mouse = require(SLAB_PATH .. '.Internal.Input.Mouse')
 local Menu = require(SLAB_PATH .. '.Internal.UI.Menu')
 local MenuState = require(SLAB_PATH .. '.Internal.UI.MenuState')
@@ -51,6 +61,7 @@ local Stats = require(SLAB_PATH .. '.Internal.Core.Stats')
 local Style = require(SLAB_PATH .. '.Style')
 local Text = require(SLAB_PATH .. '.Internal.UI.Text')
 local Tree = require(SLAB_PATH .. '.Internal.UI.Tree')
+local Utility = require(SLAB_PATH .. '.Internal.Core.Utility')
 local Window = require(SLAB_PATH .. '.Internal.UI.Window')
 
 --[[
@@ -64,7 +75,7 @@ local Window = require(SLAB_PATH .. '.Internal.UI.Window')
 	so that they may make adjustments that meet the needs of their own projects and tools. Refer
 	to main.lua and SlabTest.lua for example usage of this library.
 
-	Supported Version: 11.2.0
+	Supported Version: 11.3.0
 
 	API:
 		Initialize
@@ -72,6 +83,10 @@ local Window = require(SLAB_PATH .. '.Internal.UI.Window')
 		GetLoveVersion
 		Update
 		Draw
+		SetINIStatePath
+		GetINIStatePath
+		SetVerbose
+		GetMessages
 
 		Style:
 			GetStyle
@@ -85,6 +100,9 @@ local Window = require(SLAB_PATH .. '.Internal.UI.Window')
 			GetWindowSize
 			GetWindowContentSize
 			GetWindowActiveSize
+			IsWindowAppearing
+			PushID
+			PopID
 
 		Menu:
 			BeginMainMenuBar
@@ -110,10 +128,13 @@ local Window = require(SLAB_PATH .. '.Internal.UI.Window')
 		GetTextHeight
 		CheckBox
 		Input
+		InputNumberDrag
+		InputNumberSlider
 		GetInputText
 		GetInputNumber
 		GetInputCursorPos
 		IsInputFocused
+		IsAnyInputFocused
 		SetInputFocus
 		SetInputCursorPos
 		SetInputCursorPosLine
@@ -128,6 +149,8 @@ local Window = require(SLAB_PATH .. '.Internal.UI.Window')
 			NewLine
 			SetCursorPos
 			GetCursorPos
+			Indent
+			Unindent
 
 		Properties
 
@@ -145,6 +168,7 @@ local Window = require(SLAB_PATH .. '.Internal.UI.Window')
 			CloseDialog
 			MessageBox
 			FileDialog
+			ColorPicker
 
 		Mouse:
 			IsMouseDown
@@ -155,6 +179,8 @@ local Window = require(SLAB_PATH .. '.Internal.UI.Window')
 			GetMousePosition
 			GetMousePositionWindow
 			GetMouseDelta
+			SetCustomMouseCursor
+			ClearCustomMouseCursor
 
 		Control:
 			IsControlHovered
@@ -192,16 +218,66 @@ local Window = require(SLAB_PATH .. '.Internal.UI.Window')
 			EndLayout
 			SetLayoutColumn
 			GetLayoutSize
+
+		Scroll:
+			SetScrollSpeed
+			GetScrollSpeed
+
+		Shader:
+			PushShader
+			PopShader
+
+		Dock:
+			EnableDocks
+			DisableDocks
+			SetDockOptions
 --]]
 local Slab = {}
 
 -- Slab version numbers.
 local Version_Major = 0
-local Version_Minor = 6
+local Version_Minor = 9
 local Version_Revision = 0
 
-local FrameNumber = 0
 local FrameStatHandle = nil
+
+-- The path to save the UI state to a file. This will default to the save directory.
+local INIStatePath = "Slab.ini"
+local IsDefault = true
+local QuitFn = nil
+local Verbose = false
+local Initialized = false
+
+local ModifyCursor = true
+
+local function LoadState()
+	if INIStatePath == nil then return end
+
+	local Result, Error = Config.LoadFile(INIStatePath, IsDefault)
+	if Result ~= nil then
+		Dock.Load(Result)
+		Tree.Load(Result)
+		Window.Load(Result)
+	end
+
+	if Verbose then
+		print("Load INI file:", INIStatePath, "Error:", Error)
+	end
+end
+
+local function SaveState()
+	if INIStatePath == nil then return end
+
+	local Table = {}
+	Dock.Save(Table)
+	Tree.Save(Table)
+	Window.Save(Table)
+	local Result, Error = Config.Save(INIStatePath, Table, IsDefault)
+
+	if Verbose then
+		print("Save INI file:", INIStatePath, "Error:", Error)
+	end
+end
 
 local function TextInput(Ch)
 	Input.Text(Ch)
@@ -219,20 +295,77 @@ local function WheelMoved(X, Y)
 	end
 end
 
+local function OnQuit()
+	SaveState()
+
+	if QuitFn ~= nil then
+		QuitFn()
+	end
+end
+
+--[[
+	Event forwarding
+--]]
+
+Slab.OnTextInput = TextInput;
+Slab.OnWheelMoved = WheelMoved;
+Slab.OnQuit = OnQuit;
+Slab.OnKeyPressed = Keyboard.OnKeyPressed;
+Slab.OnKeyReleased = Keyboard.OnKeyReleased;
+Slab.OnMouseMoved = Mouse.OnMouseMoved
+Slab.OnMousePressed = Mouse.OnMousePressed;
+Slab.OnMouseReleased = Mouse.OnMouseReleased;
+
 --[[
 	Initialize
 
 	Initializes Slab and hooks into the required events. This function should be called in love.load.
 
 	args: [Table] The list of parameters passed in by the user on the command-line. This should be passed in from
-		love.load function.
+		love.load function. Below is a list of arguments available to modify Slab:
+		NoMessages: [String] Disables the messaging system that warns developers of any changes in the API.
+		NoDocks: [String] Disables all docks.
+		NoCursor: [String] Disables modifying the cursor
 
 	Return: None.
 --]]
-function Slab.Initialize(args)
+function Slab.Initialize(args, dontInterceptEventHandlers)
+	if Initialized then
+		return
+	end
+
 	Style.API.Initialize()
-	love.handlers['textinput'] = TextInput
-	love.handlers['wheelmoved'] = WheelMoved
+
+	args = args or {}
+	if type(args) == 'table' then
+		for I, V in ipairs(args) do
+			if string.lower(V) == 'nomessages' then
+				Messages.SetEnabled(false)
+			elseif string.lower(V) == 'nodocks' then
+				Slab.DisableDocks({'Left', 'Right', 'Bottom'})
+			elseif string.lower(V) == 'nocursor' then
+				ModifyCursor = false
+			end
+		end
+	end
+
+	if not dontInterceptEventHandlers then
+		love.handlers['textinput'] = TextInput
+		love.handlers['wheelmoved'] = WheelMoved
+
+		-- In Love 11.3, overriding love.handlers['quit'] doesn't seem to affect the callback during shutdown.
+		-- Storing and overriding love.quit manually will properly call Slab's callback. This function will call
+		-- the stored function once Slab is finished with its process.
+		QuitFn = love.quit
+		love.quit = OnQuit
+	end
+
+	Keyboard.Initialize(args, dontInterceptEventHandlers)
+	Mouse.Initialize(args, dontInterceptEventHandlers)
+
+	LoadState()
+
+	Initialized = true
 end
 
 --[[
@@ -269,9 +402,7 @@ end
 	Return: None.
 --]]
 function Slab.Update(dt)
-	FrameNumber = FrameNumber + 1
-
-	Stats.Reset()
+	Stats.Reset(false)
 	FrameStatHandle = Stats.Begin('Frame', 'Slab')
 	local StatHandle = Stats.Begin('Update', 'Slab')
 
@@ -280,7 +411,6 @@ function Slab.Update(dt)
 	Input.Update(dt)
 	DrawCommands.Reset()
 	Window.Reset()
-	Window.SetFrameNumber(FrameNumber)
 	LayoutManager.Validate()
 
 	if MenuState.IsOpened then
@@ -303,25 +433,102 @@ end
 	Return: None.
 --]]
 function Slab.Draw()
+	if Stats.IsEnabled() then
+		PrevStatsData = love.graphics.getStats(PrevStatsData)
+	end
+
 	local StatHandle = Stats.Begin('Draw', 'Slab')
 
 	Window.Validate()
+
+	local MovingInstance = Window.GetMovingInstance()
+	if MovingInstance ~= nil then
+		Dock.DrawOverlay()
+		Dock.SetPendingWindow(MovingInstance)
+	else
+		Dock.Commit()
+	end
 
 	if MenuState.RequestClose then
 		Menu.Close()
 		MenuBar.Clear()
 	end
 
-	Mouse.UpdateCursor()
+	if ModifyCursor then
+		Mouse.Draw()
+	end
 
 	if Mouse.IsReleased(1) then
 		Button.ClearClicked()
 	end
 
+	love.graphics.push()
+	love.graphics.origin()
 	DrawCommands.Execute()
+	love.graphics.pop()
 
 	Stats.End(StatHandle)
-	Stats.End(FrameStatHandle)
+
+	-- Only call end if 'Update' was called and a valid handle was retrieved. This can happen for developers using a custom
+	-- run function with a fixed update.
+	if FrameStatHandle ~= nil then
+		Stats.End(FrameStatHandle)
+		FrameStatHandle = nil
+	end
+
+	if Stats.IsEnabled() then
+		StatsData = love.graphics.getStats(StatsData)
+		for k, v in pairs(StatsData) do
+			StatsData[k] = v - PrevStatsData[k]
+		end
+	end
+end
+
+--[[
+	SetINIStatePath
+
+	Sets the INI path to save the UI state. If nil, Slab will not save the state to disk.
+
+	Return: None.
+--]]
+function Slab.SetINIStatePath(Path)
+	INIStatePath = Path
+	IsDefault = false
+end
+
+--[[
+	GetINIStatePath
+
+	Gets the INI path to save the UI state. This value can be nil.
+
+	Return: [String] The path on disk the UI state will be saved to.
+--]]
+function Slab.GetINIStatePath()
+	return INIStatePath
+end
+
+--[[
+	SetVerbose
+
+	Enable/Disables internal Slab logging. Could be useful for diagnosing problems that occur inside of Slab.
+
+	IsVerbose: [Boolean] Flag to enable/disable verbose logging.
+
+	Return: None.
+--]]
+function Slab.SetVerbose(IsVerbose)
+	Verbose = (IsVerbose == nil or type(IsVerbose) ~= 'boolean') and false or IsVerbose
+end
+
+--[[
+	GetMessages
+
+	Retrieves a list of existing messages that has been captured by Slab.
+
+	Return: [Table] List of messages that have been broadcasted from Slab.
+--]]
+function Slab.GetMessages()
+	return Messages.Get()
 end
 
 --[[
@@ -335,6 +542,33 @@ end
 function Slab.GetStyle()
 	return Style
 end
+
+
+--[[
+    SetScale
+
+    Sets the rendering scale for the Slab context.
+
+	scaleFactor: [number] The scale factor to use
+
+	Return: None.
+--]]
+function Slab.SetScale(scaleFactor)
+	Scale.SetScale(scaleFactor)
+end
+
+
+--[[
+    GetScale
+
+	Retrieve the scale of the current Slab context.
+
+	Return: [number] The current scale.
+--]]
+function Slab.GetScale()
+	return Scale.GetScale()
+end
+
 
 --[[
 	PushFont
@@ -376,6 +610,10 @@ end
 		ContentH: [Number] The starting height of the content contained within this window.
 		BgColor: [Table] The background color value for this window. Will use the default style WindowBackgroundColor if this is empty.
 		Title: [String] The title to display for this window. If emtpy, no title bar will be rendered and the window will not be movable.
+		TitleH: [Number] The height of the title bar. By default, this will be the height of the current font set in the style. If no title is
+			set, this is ignored.
+		TitleAlignX: [String] Horizontal alignment of the title. The available options are 'left', 'center', and 'right'. The default is 'center'.
+		TitleAlignY: [String] Vertical alignment of the title. The available options are 'top', 'center', and 'bottom'. The default is 'center'.
 		AllowMove: [Boolean] Controls whether the window is movable within the title bar area. The default value is true.
 		AllowResize: [Boolean] Controls whether the window is resizable. The default value is true. AutoSizeWindow must be false for this to work.
 		AllowFocus: [Boolean] Controls whether the window can be focused. The default value is true.
@@ -397,11 +635,17 @@ end
 			be: NW, NE, SW, SE, N, S, E, W
 		CanObstruct: [Boolean] Sets whether this window is considered for obstruction of other windows and their controls. The default value is true.
 		Rounding: [Number] Amount of rounding to apply to the corners of the window.
+		IsOpen: [Boolean] Determines if the window is open. If this value exists within the options, a close button will appear in
+			the corner of the window and is updated when this button is pressed to reflect the new open state of this window.
+		NoSavedSettings: [Boolean] Flag to disable saving this window's settings to the state INI file.
+		ConstrainPosition: [Boolean] Flag to constrain the position of the window to the bounds of the viewport.
+		ShowMinimize: [Boolean] Flag to show a minimize button in the title bar of the window. Default is `true`.
 
-	Return: None
+	Return: [Boolean] The open state of this window. Useful for simplifying API calls by storing the result in a flag instead of a table.
+		EndWindow must still be called regardless of the result for this value.
 --]]
 function Slab.BeginWindow(Id, Options)
-	Window.Begin(Id, Options)
+	return Window.Begin(Id, Options)
 end
 
 --[[
@@ -458,6 +702,45 @@ end
 --]]
 function Slab.GetWindowActiveSize()
 	return Window.GetBorderlessSize()
+end
+
+--[[
+	IsWindowAppearing
+
+	Is the current window appearing this frame. This will return true if BeginWindow has
+	not been called for a window over 2 or more frames.
+
+	Return: [Boolean] True if the window is appearing this frame. False otherwise.
+--]]
+function Slab.IsWindowAppearing()
+	return Window.IsAppearing()
+end
+
+--[[
+	PushID
+
+	Pushes a custom ID onto a stack. This allows developers to differentiate between similar controls such as
+	text controls.
+
+	ID: [String] The custom ID to add.
+
+	Return: None.
+--]]
+function Slab.PushID(ID)
+	assert(type(ID) == 'string', "'ID' parameter must be a string value.")
+
+	Window.PushID(ID)
+end
+
+--[[
+	PopID
+
+	Pops the last custom ID from the stack.
+
+	Return: None.
+--]]
+function Slab.PopID()
+	Window.PopID()
 end
 
 --[[
@@ -529,11 +812,14 @@ end
 	the user more options are available. If this function returns true, the user must call EndMenu.
 
 	Label: [String] The label to display for this menu.
+	Options: [Table] List of options that control how this menu behaves.
+		Enabled: [Boolean] Determines if this menu is enabled. This value is true by default. Disabled items are displayed but
+			cannot be interacted with.
 
 	Return: [Boolean] Returns true if the menu item is being hovered.
 --]]
-function Slab.BeginMenu(Label)
-	return Menu.BeginMenu(Label)
+function Slab.BeginMenu(Label, Options)
+	return Menu.BeginMenu(Label, Options)
 end
 
 --[[
@@ -566,11 +852,13 @@ end
 			Slab.EndContextMenu()
 		end
 
+	Button: [Number] The mouse button to use for opening up this context menu.
+
 	Return: [Boolean] Returns true if the user right clicks on the previous item call. EndContextMenu must be called in order for
 		this to function properly.
 --]]
-function Slab.BeginContextMenuItem()
-	return Menu.BeginContextMenu({IsItem = true})
+function Slab.BeginContextMenuItem(Button)
+	return Menu.BeginContextMenu({IsItem = true, Button = Button})
 end
 
 --[[
@@ -580,11 +868,13 @@ end
 	of a window's widget calls so that Slab can catch any BeginContextMenuItem calls before this call. If this function returns true,
 	EndContextMenu must be called.
 
+	Button: [Number] The mouse button to use for opening up this context menu.
+
 	Return: [Boolean] Returns true if the user right clicks anywhere within the window. EndContextMenu must be called in order for this
 		to function properly.
 --]]
-function Slab.BeginContextMenuWindow()
-	return Menu.BeginContextMenu({IsWindow = true})
+function Slab.BeginContextMenuWindow(Button)
+	return Menu.BeginContextMenu({IsWindow = true, Button = Button})
 end
 
 --[[
@@ -604,11 +894,15 @@ end
 	Adds a menu item to a given context menu.
 
 	Label: [String] The label to display to the user.
+	Options: [Table] List of options that control how this menu behaves.
+		Enabled: [Boolean] Determines if this menu is enabled. This value is true by default. Disabled items are displayed but
+			cannot be interacted with.
+		Hint: [String] Show an input hint to the right of the menu item
 
 	Return: [Boolean] Returns true if the user clicks on this menu item.
 --]]
-function Slab.MenuItem(Label)
-	return Menu.MenuItem(Label)
+function Slab.MenuItem(Label, Options)
+	return Menu.MenuItem(Label, Options)
 end
 
 --[[
@@ -625,11 +919,14 @@ end
 
 	Label: [String] The label to display to the user.
 	IsChecked: [Boolean] Determines if a check mark should be rendered next to the label.
+	Options: [Table] List of options that control how this menu behaves.
+		Enabled: [Boolean] Determines if this menu is enabled. This value is true by default. Disabled items are displayed but
+			cannot be interacted with.
 
 	Return: [Boolean] Returns true if the user clicks on this menu item.
 --]]
-function Slab.MenuItemChecked(Label, IsChecked)
-	return Menu.MenuItemChecked(Label, IsChecked)
+function Slab.MenuItemChecked(Label, IsChecked, Options)
+	return Menu.MenuItemChecked(Label, IsChecked, Options)
 end
 
 --[[
@@ -641,6 +938,7 @@ end
 		IncludeBorders: [Boolean] Whether to extend the separator to include the window borders. This is false by default.
 		H: [Number] The height of the separator. This doesn't change the line thickness, rather, specifies the cursor advancement
 			in the Y direction.
+		Thickness: [Number] The thickness of the line rendered. The default value is 1.0.
 
 	Return: None.
 --]]
@@ -661,6 +959,16 @@ end
 		W: [Number] Override the width of the button.
 		H: [Number] Override the height of the button.
 		Disabled: [Boolean] If true, the button is not interactable by the user.
+		Image: [Table] A table of options used to draw an image instead of a text label. Refer to the 'Image' documentation for a list
+			of available options.
+		Color: [Table]: The background color of the button when idle. The default value is the ButtonColor property in the Style's table.
+		HoverColor: [Table]: The background color of the button when a mouse is hovering the control. The default value is the ButtonHoveredColor property
+			in the Style's table.
+		PressColor: [Table]: The background color of the button when the button is pressed but not released. The default value is the ButtonPressedColor
+			property in the Style's table.
+		PadX: [Number] Amount of additional horizontal space the background will expand to from the center. The default value is 20.
+		PadY: [Number] Amount of additional vertical space the background will expand to from the center. The default value is 5.
+		VLines: [Number] Number of lines in a multiline button text. The default value is 1.
 
 	Return: [Boolean] Returns true if the user clicks on this button.
 --]]
@@ -697,13 +1005,15 @@ end
 	Options: [Table] List of options for how this text is displayed.
 		Color: [Table] The color to render the text.
 		Pad: [Number] How far to pad the text from the left side of the current cursor position.
+		PadH: [Number] How far to pad the text vertically, will render centered in this region
 		IsSelectable: [Boolean] Whether this text is selectable using the text's Y position and the window X and width as the
 			hot zone.
-		IsSelectableTextOnly: [Boolean] Only available if IsSelectable is true. Will use the text width instead of the
-			window width to determine the hot zone.
+		IsSelectableTextOnly: [Boolean] Will use the text width instead of the window width to determine the hot zone. Will set IsSelectable
+			to true if that option is missing.
 		IsSelected: [Boolean] Forces the hover background to be rendered.
 		SelectOnHover: [Boolean] Returns true if the user is hovering over the hot zone of this text.
 		HoverColor: [Table] The color to render the background if the IsSelected option is true.
+		URL: [String] A URL address to open when this text control is clicked.
 
 	Return: [Boolean] Returns true if SelectOnHover option is set to true. False otherwise.
 --]]
@@ -802,6 +1112,7 @@ end
 		Id: [String] An optional Id that can be supplied by the user. By default, the Id will be the label.
 		Rounding: [Number] Amount of rounding to apply to the corners of the check box.
 		Size: [Number] The uniform size of the box. The default value is 16.
+		Disabled: [Boolean] Dictates whether this check box is enabled for interaction.
 
 	Return: [Boolean] Returns true if the user clicks within the check box.
 --]]
@@ -852,12 +1163,75 @@ end
 		MultiLineW: [Number] The width for which the lines of text should be wrapped at.
 		Highlight: [Table] A list of key-values that define what words to highlight what color. Strings should be used for
 			the word to highlight and the value should be a table defining the color.
+		Step: [Number] The step amount for numeric controls when the user click and drags. The default value is 1.0.
+		NoDrag: [Boolean] Determines whether this numberic control allows the user to click and drag to alter the value.
+		UseSlider: [Boolean] If enabled, displays a slider inside the input control. This will only be drawn if the NumbersOnly
+			option is set to true. The position of the slider inside the control determines the value based on the MinNumber
+			and MaxNumber option.
+		IsPassword: [Boolean] If enabled, mask the text with another character. Default is false.
+		PasswordChar: [Char/String] Sets the character or string to use along with IsPassword flag. Default is "*"
 
 	Return: [Boolean] Returns true if the user has pressed the return key while focused on this input box. If ReturnOnText
 		is set to true, then this function will return true whenever the user has input any character into the input box.
 --]]
 function Slab.Input(Id, Options)
 	return Input.Begin(Id, Options)
+end
+
+--[[
+	InputNumberDrag
+
+	This is a wrapper function for calling the Input function which sets the proper options to set up the input box for
+	displaying and editing numbers. The user will be able to click and drag the control to alter the value. Double-clicking
+	inside this control will allow for manually editing the value.
+
+	Id: [String] A string that uniquely identifies this Input within the context of the window.
+	Value: [Number] The value to display in the control.
+	Min: [Number] The minimum value that can be set for this number control. If nil, then this value will be set to -math.huge.
+	Max: [Number] The maximum value that can be set for this number control. If nil, then this value will be set to math.huge.
+	Step: [Number] The amount to increase value when mouse delta reaches threshold.
+	Options: [Table] List of options for how this input control is displayed. See Slab.Input for all options.
+
+	Return: [Boolean] Returns true whenever this valued is modified.
+--]]
+function Slab.InputNumberDrag(Id, Value, Min, Max, Step, Options)
+	Options = Options == nil and {} or Options
+	Options.Text = tostring(Value)
+	Options.MinNumber = Min
+	Options.MaxNumber = Max
+	Options.Step = Step
+	Options.NumbersOnly = true
+	Options.UseSlider = false
+	Options.NoDrag = false
+	return Slab.Input(Id, Options)
+end
+
+--[[
+	InputNumberSlider
+
+	This is a wrapper function for calling the Input function which sets the proper options to set up the input box for
+	displaying and editing numbers. This will also force the control to display a slider, which determines what the value
+	stored is based on the Min and Max options. Double-clicking inside this control will allow for manually editing
+	the value.
+
+	Id: [String] A string that uniquely identifies this Input within the context of the window.
+	Value: [Number] The value to display in the control.
+	Min: [Number] The minimum value that can be set for this number control. If nil, then this value will be set to -math.huge.
+	Max: [Number] The maximum value that can be set for this number control. If nil, then this value will be set to math.huge.
+	Options: [Table] List of options for how this input control is displayed. See Slab.Input for all options.
+		Precision: [Number] An integer in the range [0..5]. This will set the size of the fractional component.
+		NeedDrag: [Boolean] This will determine if slider needs to be dragged before changing value, otherwise just clicking in the slider will adjust the value into the clicked value. Default is true.
+
+	Return: [Boolean] Returns true whenever this valued is modified.
+--]]
+function Slab.InputNumberSlider(Id, Value, Min, Max, Options)
+	Options = Options == nil and {} or Options
+	Options.Text = tostring(Value)
+	Options.MinNumber = Min
+	Options.MaxNumber = Max
+	Options.NumbersOnly = true
+	Options.UseSlider = true
+	return Slab.Input(Id, Options)
 end
 
 --[[
@@ -917,6 +1291,17 @@ function Slab.IsInputFocused(Id)
 end
 
 --[[
+	IsAnyInputFocused
+
+	Returns whether any input control is focused or not.
+
+	Return: [Boolean] True if there is an input control focused. False otherwise.
+--]]
+function Slab.IsAnyInputFocused()
+	return Input.IsAnyFocused()
+end
+
+--[[
 	SetInputFocus
 
 	Sets the focus of the input control to the control with the given Id. The focus is set at the beginning
@@ -964,7 +1349,8 @@ end
 	order for this tree item to behave properly. The hot zone of this tree item will be the height of the label and the width
 	of the window by default.
 
-	Id: [String] A string uniquely identifying this tree item within the context of the window.
+	Id: [String/Table] A string or table uniquely identifying this tree item within the context of the window. If the given Id
+		is a table, then the internal Tree entry for this table will be removed once the table has been garbage collected.
 	Options: [Table] List of options for how this tree item will behave.
 		Label: [String] The text to be rendered for this tree item.
 		Tooltip: [String] The text to be rendered when the user hovers over this tree item.
@@ -972,11 +1358,10 @@ end
 		OpenWithHighlight: [Boolean] If this is true, the tree will be expanded/collapsed when the user hovers over the hot
 			zone of this tree item. If this is false, the user must click the expand/collapse icon to interact with this tree
 			item.
-		Icon: [Object] A user supplied image. This must be a valid Love image or the call will assert.
-		IconPath: [String] If the Icon option is nil, then a path can be specified. Slab will load and
-			manage the image resource.
+		Icon: [Table] List of options to use for drawing the icon. Refer to the 'Image' documentation for more information.
 		IsSelected: [Boolean] If true, will render a highlight rectangle around the tree item.
 		IsOpen: [Boolean] Will force the tree item to be expanded.
+		NoSavedSettings: [Boolean] Flag to disable saving this tree's settings to the state INI file.
 
 	Return: [Boolean] Returns true if this tree item is expanded. Slab.EndTree must be called if this returns true.
 --]]
@@ -1061,12 +1446,18 @@ end
 		SubY: [Number] The Y-coordinate used inside the given image.
 		SubW: [Number] The width used inside the given image.
 		SubH: [Number] The height used insided the given image.
-		WrapX: [String] The horizontal wrapping mode for this image. The available options are 'clamp', 'repeat', 
+		WrapX: [String] The horizontal wrapping mode for this image. The available options are 'clamp', 'repeat',
 			'mirroredrepeat', and 'clampzero'. For more information refer to the Love2D documentation on wrap modes at
 			https://love2d.org/wiki/WrapMode.
-		WrapY: [String] The vertical wrapping mode for this image. The available options are 'clamp', 'repeat', 
+		WrapY: [String] The vertical wrapping mode for this image. The available options are 'clamp', 'repeat',
 			'mirroredrepeat', and 'clampzero'. For more information refer to the Love2D documentation on wrap modes at
 			https://love2d.org/wiki/WrapMode.
+		UseOutline: [Boolean] If set to true, a rectangle will be drawn around the given image. If 'SubW' or 'SubH' are specified, these
+			values will be used instead of the image's dimensions.
+		OutlineColor: [Table] The color used to draw the outline. Default color is black.
+		OutlineW: [Number] The width used for the outline. Default value is 1.
+		W: [Number] The width the image should be resized to.
+		H: [Number] The height the image should be resized to.
 
 	Return: None.
 --]]
@@ -1097,10 +1488,15 @@ end
 
 	This forces the cursor to advance to the next line based on the height of the current font.
 
+	Count: [Number] Specify how many new lines to insert, defaults to 1
+
 	Return: None.
 --]]
-function Slab.NewLine()
-	LayoutManager.NewLine()
+function Slab.NewLine(Count)
+	Count = Count or 1
+	for i = 1, Count do
+		LayoutManager.NewLine()
+	end
 end
 
 --[[
@@ -1160,6 +1556,38 @@ function Slab.GetCursorPos(Options)
 end
 
 --[[
+	Indent
+
+	Advances the anchored X position of the cursor. All subsequent lines will begin at the new cursor position. This function
+	has no effect when columns are present.
+
+	Width: [Number] How far in pixels to advance the cursor. If nil, then the default value identified by the 'Indent'
+		property in the current style is used.
+
+	Return: None.
+--]]
+function Slab.Indent(Width)
+	Width = Width == nil and Style.Indent or Width
+	Cursor.Indent(Width)
+end
+
+--[[
+	Unindent
+
+	Retreats the anchored X position of the cursor. All subsequent lines will begin at the new cursor position. This function
+	has no effect when columns are present.
+
+	Width: [Number] How far in pixels to retreat the cursor. If nil, then the default value identified by the 'Indent'
+		property in the current style is used.
+
+	Return: None.
+--]]
+function Slab.Unindent(Width)
+	Width = Width == nil and Style.Indent or Width
+	Cursor.Unindent(Width)
+end
+
+--[[
 	Properties
 
 	Iterates through the table's key-value pairs and adds them to the active window. This currently only does
@@ -1168,28 +1596,45 @@ end
 	TODO: Iterate through nested tables.
 
 	Table: [Table] The list of properties to build widgets for.
+	Options: [Table] List of options that can applied to a specific property. The key should match an entry in the
+		'Table' argument and will apply any additional options to the property control.
+	Fallback: [Table] List of options that can be applied to any property if an entry was not found in the 'Options'
+		argument.
 
 	Return: None.
 --]]
-function Slab.Properties(Table)
+function Slab.Properties(Table, Options, Fallback)
+	Options = Options or {}
+	Fallback = Fallback or {}
+
 	if Table ~= nil then
-		for K, V in pairs(Table) do
+		for I, T in ipairs(Table) do
+			local V = T.Value
 			local Type = type(V)
+			local ID = T.ID
+			local ItemOptions = Options[ID] or Fallback
 			if Type == "boolean" then
-				if Slab.CheckBox(V, K) then
-					Table[K] = not Table[K]
+				if Slab.CheckBox(V, ID, ItemOptions) then
+					T.Value = not T.Value
 				end
 			elseif Type == "number" then
-				Slab.Text(K .. ": ")
+				Slab.Text(ID .. ": ")
 				Slab.SameLine()
-				if Slab.Input(K, {Text = tostring(V), NumbersOnly = true, ReturnOnText = false}) then
-					Table[K] = Slab.GetInputNumber()
+				ItemOptions.Text = V
+				ItemOptions.NumbersOnly = true
+				ItemOptions.ReturnOnText = false
+				ItemOptions.UseSlider = ItemOptions.MinNumber and ItemOptions.MaxNumber
+				if Slab.Input(ID, ItemOptions) then
+					T.Value = Slab.GetInputNumber()
 				end
 			elseif Type == "string" then
-				Slab.Text(K .. ": ")
+				Slab.Text(ID .. ": ")
 				Slab.SameLine()
-				if Slab.Input(K, {Text = V, ReturnOnText = false}) then
-					Table[K] = Slab.GetInputText()
+				ItemOptions.Text = V
+				ItemOptions.NumbersOnly = false
+				ItemOptions.ReturnOnText = false
+				if Slab.Input(ID, ItemOptions) then
+					T.Value = Slab.GetInputText()
 				end
 			end
 		end
@@ -1204,12 +1649,13 @@ end
 
 	Id: [String] A string uniquely identifying this list box within the context of the current window.
 	Options: [Table] List of options controlling the behavior of the list box.
-		W: [Number] The width of the list box. If nil, then the width of the window is used.
-		H: [Number] The height of the list box. If nil, a default value of 150 is used. If H is 0, then
-			the list box will stretch to the height of the window.
+		W: [Number] The width of the list box. If nil, a default value of 150 is used.
+		H: [Number] The height of the list box. If nil, a default value of 150 is used.
 		Clear: [Boolean] Clears out the items in the list. It is recommended to only call this if the list items
 			has changed and should not be set to true on every frame.
 		Rounding: [Number] Amount of rounding to apply to the corners of the list box.
+		StretchW: [Boolean] Stretch the list box to fill the remaining width of the window.
+		StretchH: [Boolean] Stretch the list box to fill the remaining height of the window.
 
 	Return: None.
 --]]
@@ -1340,38 +1786,7 @@ end
 	Return: [String] The name of the button that was clicked. If none was clicked, an emtpy string is returned.
 --]]
 function Slab.MessageBox(Title, Message, Options)
-	Options = Options == nil and {} or Options
-	Options.Buttons = Options.Buttons == nil and {"OK"} or Options.Buttons
-
-	local Result = ""
-
-	Slab.OpenDialog('MessageBox')
-	if Slab.BeginDialog('MessageBox', {Title = Title, Border = 12}) then
-		Slab.BeginLayout('MessageBox_Message_Layout', {AlignX = 'center', AlignY = 'center'})
-		local TextW = math.min(Slab.GetTextWidth(Message), love.graphics.getWidth() * 0.80)
-		Slab.Textf(Message, {Align = 'center', W = TextW})
-		Slab.EndLayout()
-
-		Slab.NewLine()
-		Slab.NewLine()
-
-		Slab.BeginLayout('MessageBox_Buttons_Layout', {AlignX = 'right', AlignY = 'bottom'})
-		for I, V in ipairs(Options.Buttons) do
-			if Button.Begin(V) then
-				Result = V
-			end
-			Slab.SameLine()
-		end
-		Slab.EndLayout()
-
-		if Result ~= "" then
-			Slab.CloseDialog()
-		end
-
-		Slab.EndDialog()
-	end
-
-	return Result
+	return Dialog.MessageBox(Title, Message, Options)
 end
 
 --[[
@@ -1397,6 +1812,8 @@ end
 				element is the description of the filter e.g. {"*.lua", "Lua Files"}
 			String: If a raw string is used, then it should just be the filter. It is recommended to use the table option since a
 				description can be given for each filter.
+		IncludeParent: [Boolean] This option will include the parent '..' directory item in the file/dialog list. This option is
+			true by default.
 
 	Return: [Table] Returns items for how the user interacted with this file dialog.
 		Button: [String] The button the user clicked. Will either be OK or Cancel.
@@ -1416,7 +1833,7 @@ end
 		Color: [Table] The color to modify. This should be in the format of 0-1 for each color component (RGBA).
 
 	Return: [Table] Returns the button and color the user has selected.
-		Button: [String] The button the user clicked. Will either be OK or Cancel.
+		Button: [Number] The button the user clicked. 1 - OK. 0 - No Interaction. -1 - Cancel.
 		Color: [Table] The new color the user has chosen. This will always be returned.
 --]]
 function Slab.ColorPicker(Options)
@@ -1433,7 +1850,7 @@ end
 	Return: [Boolean] True if the given button is down. False otherwise.
 --]]
 function Slab.IsMouseDown(Button)
-	return Mouse.IsPressed(Button and Button or 1)
+	return Mouse.IsDown(Button and Button or 1)
 end
 
 --[[
@@ -1502,7 +1919,7 @@ end
 --[[
 	GetMousePositionWindow
 
-	Retrieves the current mouse position within the current window. This position will include any transformations 
+	Retrieves the current mouse position within the current window. This position will include any transformations
 	added to the window such as scrolling.
 
 	Return: [Number], [Number] The X and Y coordinates of the mouse position within the window.
@@ -1523,6 +1940,30 @@ function Slab.GetMouseDelta()
 end
 
 --[[
+	SetCustomMouseCursor
+
+	Overrides a system mouse cursor of the given type to render a custom image instead.
+
+	Type: [String] The system cursor type to replace. This can be one of the following values: 'arrow', 'sizewe', 'sizens', 'sizenesw', 'sizenwse', 'ibeam', 'hand'.
+	Image: [Table] An 'Image' object created from love.graphics.newImage. If this is nil, then an empty image is created and is drawn when the system cursor is activated.
+	Quad: [Table] A 'Quad' object created from love.graphics.newQuad. This allows support for setting UVs of an image to render.
+--]]
+function Slab.SetCustomMouseCursor(Type, Image, Quad)
+	Mouse.SetCustomCursor(Type, Image, Quad)
+end
+
+--[[
+	ClearCustomMouseCursor
+
+	Removes any override of a system mouse cursor with the given type and defaults to the OS specific mouse cursor.
+
+	Type: [String] The system cursor type to remove. This can be one of the following values: 'arrow', 'sizewe', 'sizens', 'sizenesw', 'sizenwse', 'ibeam', 'hand'.
+--]]
+function Slab.ClearCustomMouseCursor(Type)
+	Mouse.ClearCustomCursor(Type)
+end
+
+--[[
 	IsControlHovered
 
 	Checks to see if the last control added to the window is hovered by the mouse.
@@ -1530,9 +1971,14 @@ end
 	Return: [Boolean] True if the last control is hovered, false otherwise.
 --]]
 function Slab.IsControlHovered()
+	-- Prevent hovered checks on mobile if user is not dragging a touch.
+	if Utility.IsMobile() and not Slab.IsMouseDown() then
+		return false
+	end
+
 	local Result = Window.IsItemHot()
 
-	if not Result then
+	if not Result and not Window.IsObstructedAtMouse() then
 		local X, Y = Slab.GetMousePositionWindow()
 		Result = Cursor.IsInItemBounds(X, Y)
 	end
@@ -1573,6 +2019,11 @@ end
 	Return: [Boolean] True if any non-Slab area of the viewport is hovered. False otherwise.
 --]]
 function Slab.IsVoidHovered()
+	-- Prevent hovered checks on mobile if user is not dragging a touch.
+	if Utility.IsMobile() and not Slab.IsMouseDown() then
+		return false
+	end
+
 	return Region.GetHotInstanceId() == '' and not Region.IsScrolling()
 end
 
@@ -1592,10 +2043,10 @@ end
 --[[
 	IsKeyDown
 
-	Checks to see if a specific key is held down. The key should be one of the love defined KeyConstant which the list can
-	be found at https://love2d.org/wiki/KeyConstant.
+	Checks to see if a specific key is held down. The key should be one of the love defined Scancode which the list can
+	be found at https://love2d.org/wiki/Scancode.
 
-	Key: [String] A love defined key constant.
+	Key: [String] A love defined key scancode.
 
 	Return: [Boolean] True if the key is held down. False otherwise.
 --]]
@@ -1606,24 +2057,24 @@ end
 --[[
 	IsKeyPressed
 
-	Checks to see if a specific key state went from up to down this frame. The key should be one of the love defined KeyConstant which the list can
-	be found at https://love2d.org/wiki/KeyConstant.
+	Checks to see if a specific key state went from up to down this frame. The key should be one of the love defined Scancode which the list can
+	be found at https://love2d.org/wiki/Scancode.
 
-	Key: [String] A love defined key constant.
+	Key: [String] A love defined scancode.
 
 	Return: [Boolean] True if the key state went from up to down this frame. False otherwise.
 --]]
 function Slab.IsKeyPressed(Key)
-	return Keyboard.IsPressed(Key, true)
+	return Keyboard.IsPressed(Key)
 end
 
 --[[
 	IsKeyPressed
 
-	Checks to see if a specific key state went from down to up this frame. The key should be one of the love defined KeyConstant which the list can
-	be found at https://love2d.org/wiki/KeyConstant.
+	Checks to see if a specific key state went from down to up this frame. The key should be one of the love defined Scancode which the list can
+	be found at https://love2d.org/wiki/Scancode.
 
-	Key: [String] A love defined key constant.
+	Key: [String] A love defined scancode.
 
 	Return: [Boolean] True if the key state went from down to up this frame. False otherwise.
 --]]
@@ -1866,6 +2317,40 @@ function Slab.FlushStats()
 end
 
 --[[
+	GetStats
+
+	Get the love.graphics.getStats of the Slab.
+	Stats.SetEnabled(true) must be previously set to enable this.
+	Must be called in love.draw (recommended at the end of draw)
+
+	Return: Table.
+--]]
+
+function Slab.GetStats()
+	return StatsData
+end
+
+--[[
+	CalculateStats
+
+	Calculate the passed love.graphics.getStats table of love by subtracting
+	the stats of Slab.
+	Stats.SetEnabled(true) must be previously set to enable this.
+	Must be called in love.draw (recommended at the end of draw)
+
+	Return: Table.
+--]]
+
+function Slab.CalculateStats(LoveStats)
+	for k, v in pairs(LoveStats) do
+		if StatsData[k] then
+			LoveStats[k] = v - StatsData[k]
+		end
+	end
+	return LoveStats
+end
+
+--[[
 	BeginLayout
 
 	Enables the layout manager and positions the controls between this call and EndLayout based on the given options. The anchor
@@ -1874,7 +2359,7 @@ end
 
 	Id: [String] The Id of this layout.
 	Options: [Table] List of options that control how this layout behaves.
-		AlignX: [String] Defines how the controls should be positioned horizontally in the window. The available options are 
+		AlignX: [String] Defines how the controls should be positioned horizontally in the window. The available options are
 			'left', 'center', or 'right'. The default option is 'left'.
 		AlignY: [String] Defines how the controls should be positioned vertically in the window. The available options are
 			'top', 'center', or 'bottom'. The default option is 'top'. The top is determined by the current cursor position.
@@ -1930,6 +2415,128 @@ end
 --]]
 function Slab.GetLayoutSize()
 	return LayoutManager.GetActiveSize()
+end
+
+--[[
+	GetCurrentColumnIndex
+
+	Retrieves the current index of the active column.
+
+	Return: [Number] The current index of the active column of the active layout. 0 is returned if no layout or column is active.
+--]]
+function Slab.GetCurrentColumnIndex()
+	return LayoutManager.GetCurrentColumnIndex()
+end
+
+--[[
+	SetScrollSpeed
+
+	Sets the speed of scrolling when using the mouse wheel.
+
+	Return: None.
+--]]
+function Slab.SetScrollSpeed(Speed)
+	Region.SetWheelSpeed(Speed)
+end
+
+--[[
+	GetScrollSpeed
+
+	Retrieves the speed of scrolling for the mouse wheel.
+
+	Return: [Number] The current wheel scroll speed.
+--]]
+function Slab.GetScrollSpeed()
+	return Region.GetWheelSpeed()
+end
+
+--[[
+	PushShader
+
+	Pushes a shader effect to be applied to any following controls before a call to PopShader. Any shader effect that is still active
+	will be cleared at the end of Slab's draw call.
+
+	Shader: [Object] The shader object created with the love.graphics.newShader function. This object should be managed by the caller.
+
+	Return: None.
+--]]
+function Slab.PushShader(Shader)
+	DrawCommands.PushShader(Shader)
+end
+
+--[[
+	PopShader
+
+	Pops the currently active shader effect. Will enable the next active shader on the stack. If none exists, no shader is applied.
+
+	Return: None.
+--]]
+function Slab.PopShader()
+	DrawCommands.PopShader()
+end
+
+--[[
+	EnableDocks
+
+	Enables the docking functionality for a particular side of the viewport.
+
+	List: [String/Table] A single item or list of items to enable for docking. The valid options are 'Left', 'Right', or 'Bottom'.
+
+	Return: None.
+--]]
+function Slab.EnableDocks(List)
+	Dock.Toggle(List, true)
+end
+
+--[[
+	DisableDocks
+
+	Disables the docking functionality for a particular side of the viewport.
+
+	List: [String/Table] A single item or list of items to disable for docking. The valid options are 'Left', 'Right', or 'Bottom'.
+
+	Return: None.
+--]]
+function Slab.DisableDocks(List)
+	Dock.Toggle(List, false)
+end
+
+--[[
+	SetDockOptions
+
+	Set options for a dock type.
+
+	Type: [String] The type of dock to set options for. This can be 'Left', 'Right', or 'Bottom'.
+	Options: [Table] List of options that control how a dock behaves.
+		NoSavedSettings: [Boolean] Flag to disable saving a dock's settings to the state INI file.
+--]]
+function Slab.SetDockOptions(Type, Options)
+	Dock.SetOptions(Type, Options)
+end
+
+--[[
+	WindowToDoc
+
+	Programatically set a window to dock.
+
+	Type: [String] The type of dock to set options for. This can be 'Left', 'Right', or 'Bottom'.
+--]]
+function Slab.WindowToDock(Type)
+	Window.ToDock(Type)
+end
+
+--[[
+	ToLoveFile
+
+	Moves a file to a temporary location and returns a Love2D friendly way to access the file. The returned string can be used in
+	any Love2D function that takes a Filename
+
+	Source: [String] An absolute path to a file on the disk, can take a value from FileDialog
+
+	Return: [String] A Love2D Filename
+]]
+function Slab.ToLoveFile(Source)
+	return FileSystem.ToLove(Source)
 end
 
 return Slab

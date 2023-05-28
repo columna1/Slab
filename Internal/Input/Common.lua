@@ -24,12 +24,13 @@ SOFTWARE.
 
 --]]
 
--- This file is for running a project within the Slab folder. This file
--- should not be used when using the Slab folder within another project.
-if SLAB_PATH == nil then
-	SLAB_PATH = (...):match("(.-)[^%.]+$") 
-end
+local Common = {}
 
-local Slab = require(SLAB_PATH .. '.API')
+Common.Event =
+{
+	None = 0,
+	Pressed = 1,
+	Released = 2
+}
 
-return Slab
+return Common

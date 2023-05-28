@@ -2,7 +2,7 @@
 
 MIT License
 
-Copyright (c) 2019 Mitchell Davis <coding.jackalope@gmail.com>
+Copyright (c) 2019-2021 Love2D Community <love2d.org>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -28,7 +28,8 @@ local MenuState =
 {
 	IsOpened = false,
 	WasOpened = false,
-	RequireClose = false
+	RequestClose = false,
+	MainMenuBarH = 0
 }
 
 return MenuState

@@ -2,7 +2,7 @@
 
 MIT License
 
-Copyright (c) 2019 Mitchell Davis <coding.jackalope@gmail.com>
+Copyright (c) 2019-2021 Love2D Community <love2d.org>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -24,6 +24,8 @@ SOFTWARE.
 
 --]]
 
+local max = math.max
+
 local Cursor = require(SLAB_PATH .. '.Internal.Core.Cursor')
 local DrawCommands = require(SLAB_PATH .. '.Internal.Core.DrawCommands')
 local LayoutManager = require(SLAB_PATH .. '.Internal.UI.LayoutManager')
@@ -35,69 +37,73 @@ local Tooltip = require(SLAB_PATH .. '.Internal.UI.Tooltip')
 local Window = require(SLAB_PATH .. '.Internal.UI.Window')
 
 local CheckBox = {}
+local EMPTY = {}
+local IGNORE = { Ignore = true }
+local labelColor = {}
 
-function CheckBox.Begin(Enabled, Label, Options)
-	local StatHandle = Stats.Begin('CheckBox', 'Slab')
+function CheckBox.Begin(checked, label, options)
+	local statHandle = Stats.Begin('CheckBox', 'Slab')
 
-	Label = Label == nil and "" or Label
+	label = label or ""
 
-	Options = Options == nil and {} or Options
-	Options.Tooltip = Options.Tooltip == nil and "" or Options.Tooltip
-	Options.Id = Options.Id == nil and Label or Options.Id
-	Options.Rounding = Options.Rounding == nil and Style.CheckBoxRounding or Options.Rounding
-	Options.Size = Options.Size == nil and 16 or Options.Size
+	options = options or EMPTY
+	local id = options.Id or label
+	local rounding = options.Rounding or Style.CheckBoxRounding
+	local size = options.Size or Style.Font:getHeight()
+	local disabled = options.Disabled
 
-	local Id = Window.GetItemId(Options.Id and Options.Id or ('_' .. Label .. '_CheckBox'))
-	local BoxW, BoxH = Options.Size, Options.Size
-	local TextW, TextH = Text.GetSize(Label)
-	local W = BoxW + Cursor.PadX() + 2.0 + TextW
-	local H = math.max(BoxH, TextH)
-	local Radius = Options.Size * 0.5
+	local itemId = Window.GetItemId(id)
+	local boxW, boxH = size, size
+	local textW, textH = Text.GetSize(label)
+	local w = boxW + Cursor.PadX() + 2.0 + textW
+	local h = max(boxH, textH)
+	local radius = size * 0.5
 
-	LayoutManager.AddControl(W, H)
+	LayoutManager.AddControl(w, h, 'CheckBox')
 
-	local Result = false
-	local Color = Style.ButtonColor
+	local result = false
+	local color = disabled and Style.CheckBoxDisabledColor or Style.ButtonColor
 
-	local X, Y = Cursor.GetPosition()
-	local MouseX, MouseY = Window.GetMousePosition()
-	local IsObstructed = Window.IsObstructedAtMouse()
-	if not IsObstructed and X <= MouseX and MouseX <= X + BoxW and Y <= MouseY and MouseY <= Y + BoxH then
-		Color = Style.ButtonHoveredColor
+	local x, y = Cursor.GetPosition()
+	local mouseX, mouseY = Window.GetMousePosition()
+	local isObstructed = Window.IsObstructedAtMouse()
+	if not isObstructed and not disabled and x <= mouseX and mouseX <= x + w and y <= mouseY and mouseY <= y + h then
+		color = Style.ButtonHoveredColor
 
-		if Mouse.IsPressed(1) then
-			Color = Style.ButtonPressedColor
+		if Mouse.IsDown(1) then
+			color = Style.ButtonPressedColor
 		elseif Mouse.IsReleased(1) then
-			Result = true
+			result = true
 		end
 	end
 
-	DrawCommands.Rectangle('fill', X, Y, BoxW, BoxH, Color, Options.Rounding)
-	if Enabled then
-		DrawCommands.Cross(X + Radius, Y + Radius, Radius - 1.0, Style.CheckBoxSelectedColor)
+	DrawCommands.Rectangle('fill', x, y, boxW, boxH, color, rounding)
+	if checked then
+		DrawCommands.Cross(x + radius, y + radius, radius - 1.0, Style.CheckBoxSelectedColor)
 	end
-	if Label ~= "" then
-		local CursorY = Cursor.GetY()
-		Cursor.AdvanceX(BoxW + 2.0)
-		LayoutManager.Begin('Ignore', {Ignore = true})
-		Text.Begin(Label)
+	if label ~= "" then
+		local cursorY = Cursor.GetY()
+		Cursor.AdvanceX(boxW + 2.0)
+		LayoutManager.Begin('Ignore', IGNORE)
+		labelColor.Color = disabled and Style.TextDisabledColor or nil
+		Text.Begin(label, labelColor)
 		LayoutManager.End()
-		Cursor.SetY(CursorY)
+		Cursor.SetY(cursorY)
 	end
 
-	if not IsObstructed and X <= MouseX and MouseX <= X + W and Y <= MouseY and MouseY <= Y + H then
-		Tooltip.Begin(Options.Tooltip)
-		Window.SetHotItem(Id)
+	if not isObstructed and x <= mouseX and mouseX <= x + w and y <= mouseY and mouseY <= y + h then
+		Tooltip.Begin(options.Tooltip or "")
+		Window.SetHotItem(itemId)
 	end
 
-	Cursor.SetItemBounds(X, Y, W, H)
-	Cursor.AdvanceY(H)
+	Cursor.SetItemBounds(x, y, w, h)
+	Cursor.AdvanceY(h)
 
-	Window.AddItem(X, Y, W, H, Id)
+	Window.AddItem(x, y, w, h, itemId)
 
-	Stats.End(StatHandle)
+	Stats.End(statHandle)
 
-	return Result
+	return result
 end
 
 return CheckBox

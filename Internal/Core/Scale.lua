@@ -1,3 +1,4 @@
+
 --[[
 
 MIT License
@@ -24,12 +25,33 @@ SOFTWARE.
 
 --]]
 
--- This file is for running a project within the Slab folder. This file
--- should not be used when using the Slab folder within another project.
-if SLAB_PATH == nil then
-	SLAB_PATH = (...):match("(.-)[^%.]+$") 
+
+local CurrentScale = 1
+
+
+local Scale = {}
+
+function Scale.SetScale(newScale)
+	assert(type(newScale) == "number", "Scale needs to be a number!")
+	CurrentScale = newScale
 end
 
-local Slab = require(SLAB_PATH .. '.API')
+function Scale.GetScale()
+	return CurrentScale or 1
+end
 
-return Slab
+function Scale.GetScreenWidth()
+	return love.graphics.getWidth() / Scale.GetScale()
+end
+
+function Scale.GetScreenHeight()
+	return love.graphics.getHeight() / Scale.GetScale()
+end
+
+function Scale.GetScreenDimensions()
+	return Scale.GetScreenWidth(), Scale.GetScreenHeight()
+end
+
+
+return Scale
+

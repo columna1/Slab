@@ -2,7 +2,7 @@
 
 MIT License
 
-Copyright (c) 2019 Mitchell Davis <coding.jackalope@gmail.com>
+Copyright (c) 2019-2021 Love2D Community <love2d.org>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -54,12 +54,16 @@ function MenuBar.Begin(IsMainMenuBar)
 		Instance.Selected = nil
 	end
 
+	if IsMainMenuBar then
+		MenuState.MainMenuBarH = Style.Font:getHeight() + Style.MenuPadH
+	end
+
 	Window.Begin(Instance.Id,
 	{
 		X = X,
 		Y = Y,
 		W = WinW,
-		H = Style.Font:getHeight(),
+		H = Style.Font:getHeight() + Style.MenuPadH,
 		AllowResize = false,
 		AllowFocus = false,
 		Border = 0.0,
@@ -69,7 +73,8 @@ function MenuBar.Begin(IsMainMenuBar)
 		AutoSizeWindow = false,
 		AutoSizeContent = false,
 		Layer = IsMainMenuBar and 'MainMenuBar' or nil,
-		Rounding = 0.0
+		Rounding = 0.0,
+		NoSavedSettings = true
 	})
 
 	Cursor.AdvanceX(4.0)

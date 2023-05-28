@@ -2,7 +2,7 @@
 
 MIT License
 
-Copyright (c) 2019 Mitchell Davis <coding.jackalope@gmail.com>
+Copyright (c) 2019-2021 Love2D Community <love2d.org>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -26,6 +26,9 @@ SOFTWARE.
 
 local Stats = {}
 
+local insert = table.insert
+local max = math.max
+
 local Data = {}
 local Pending = {}
 local Enabled = false
@@ -33,6 +36,7 @@ local QueueEnabled = false
 local QueueDisable = false
 local Id = 1
 local QueueFlush = false
+local FrameNumber = 0
 
 local function GetCategory(Category)
 	assert(Category ~= nil, "Nil category given to Stats system.")
@@ -53,7 +57,7 @@ local function ResetCategory(Category)
 		for K, V in pairs(Instance) do
 			V.LastTime = V.Time
 			V.LastCallCount = V.CallCount
-			V.MaxTime = math.max(V.MaxTime, V.Time)
+			V.MaxTime = max(V.MaxTime, V.Time)
 			V.Time = 0.0
 			V.CallCount = 0
 		end
@@ -137,11 +141,13 @@ function Stats.GetCallCount(Name, Category)
 	end
 
 	local Item = GetItem(Name, Category)
-	
+
 	return Item.CallCount > 0 and Item.CallCount or Item.LastCallCount
 end
 
-function Stats.Reset()
+function Stats.Reset(Strict)
+	FrameNumber = FrameNumber + 1
+
 	if QueueEnabled then
 		Enabled = true
 		QueueEnabled = false
@@ -172,7 +178,9 @@ function Stats.Reset()
 		Message = Message .. "\t" .. tostring(V.Name) .. " in " .. tostring(V.Category) .. "\n"
 	end
 
-	assert(Message == nil, Message)
+	if Strict then
+		assert(Message == nil, Message)
+	end
 
 	for K, V in pairs(Data) do
 		ResetCategory(K)
@@ -195,7 +203,7 @@ function Stats.GetCategories()
 	local Result = {}
 
 	for K, V in pairs(Data) do
-		table.insert(Result, K)
+		insert(Result, K)
 	end
 
 	return Result
@@ -207,7 +215,7 @@ function Stats.GetItems(Category)
 	local Instance = GetCategory(Category)
 
 	for K, V in pairs(Instance) do
-		table.insert(Result, K)
+		insert(Result, K)
 	end
 
 	return Result
@@ -215,6 +223,10 @@ end
 
 function Stats.Flush()
 	QueueFlush = true
+end
+
+function Stats.GetFrameNumber()
+	return FrameNumber
 end
 
 return Stats

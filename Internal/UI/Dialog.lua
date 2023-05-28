@@ -2,7 +2,7 @@
 
 MIT License
 
-Copyright (c) 2019 Mitchell Davis <coding.jackalope@gmail.com>
+Copyright (c) 2019-2021 Love2D Community <love2d.org>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -24,6 +24,13 @@ SOFTWARE.
 
 --]]
 
+local insert = table.insert
+local remove = table.remove
+local min = math.min
+local max = math.max
+local floor = math.floor
+local gmatch = string.gmatch
+
 local Button = require(SLAB_PATH .. '.Internal.UI.Button')
 local ComboBox = require(SLAB_PATH .. '.Internal.UI.ComboBox')
 local Cursor = require(SLAB_PATH .. '.Internal.Core.Cursor')
@@ -40,6 +47,8 @@ local Text = require(SLAB_PATH .. '.Internal.UI.Text')
 local Tree = require(SLAB_PATH .. '.Internal.UI.Tree')
 local Utility = require(SLAB_PATH .. '.Internal.Core.Utility')
 local Window = require(SLAB_PATH .. '.Internal.UI.Window')
+local Scale = require(SLAB_PATH .. ".Internal.Core.Scale")
+
 
 local Dialog = {}
 local Instances = {}
@@ -81,11 +90,11 @@ local function PruneResults(Items, DirectoryOnly)
 	for I, V in ipairs(Items) do
 		if FileSystem.IsDirectory(V) then
 			if DirectoryOnly then
-				table.insert(Result, V)
+				insert(Result, V)
 			end
 		else
 			if not DirectoryOnly then
-				table.insert(Result, V)
+				insert(Result, V)
 			end
 		end
 	end
@@ -96,14 +105,10 @@ end
 local function OpenDirectory(Dir)
 	if ActiveInstance ~= nil and ActiveInstance.Directory ~= nil then
 		ActiveInstance.Parsed = false
-		if Dir == ".." then
-			ActiveInstance.Directory = FileSystem.Parent(ActiveInstance.Directory)
-		else
-			if string.sub(Dir, #Dir, #Dir) == FileSystem.Separator() then
-				Dir = string.sub(Dir, 1, #Dir - 1)
-			end
-			ActiveInstance.Directory = Dir
+		if string.sub(Dir, #Dir, #Dir) == FileSystem.Separator() then
+			Dir = string.sub(Dir, 1, #Dir - 1)
 		end
+		ActiveInstance.Directory = FileSystem.Sanitize(Dir)
 	end
 end
 
@@ -111,7 +116,8 @@ local function FileDialogItem(Id, Label, IsDirectory, Index)
 	ListBox.BeginItem(Id, {Selected = Utility.HasValue(ActiveInstance.Selected, Index)})
 
 	if IsDirectory then
-		Image.Begin('FileDialog_Folder', {Path = SLAB_PATH .. "/Internal/Resources/Textures/Folder.png"})
+		local FontH = Style.Font:getHeight()
+		Image.Begin('FileDialog_Folder', {Path = SLAB_FILE_PATH .. "/Internal/Resources/Textures/Icons.png", SubX = 0.0, SubY = 0.0, SubW = 50.0, SubH = 50.0, W = FontH, H = FontH})
 		Cursor.SameLine({CenterY = true})
 	end
 
@@ -126,25 +132,25 @@ local function FileDialogItem(Id, Label, IsDirectory, Index)
 					Utility.Remove(ActiveInstance.Selected, Index)
 					Utility.Remove(ActiveInstance.Return, ActiveInstance.Directory .. "/" .. Label)
 				else
-					table.insert(ActiveInstance.Selected, Index)
-					table.insert(ActiveInstance.Return, ActiveInstance.Directory .. "/" .. Label)
+					insert(ActiveInstance.Selected, Index)
+					insert(ActiveInstance.Return, ActiveInstance.Directory .. "/" .. Label)
 				end
 			elseif Keyboard.IsDown('lshift') or Keyboard.IsDown('rshift') then
 				if #ActiveInstance.Selected > 0 then
 					Set = false
 					local Anchor = ActiveInstance.Selected[#ActiveInstance.Selected]
-					local Min = math.min(Anchor, Index)
-					local Max = math.max(Anchor, Index)
+					local Min = min(Anchor, Index)
+					local Max = max(Anchor, Index)
 
 					ActiveInstance.Selected = {}
 					ActiveInstance.Return = {}
 					for I = Min, Max, 1 do
-						table.insert(ActiveInstance.Selected, I)
+						insert(ActiveInstance.Selected, I)
 						if I > #ActiveInstance.Directories then
 							I = I - #ActiveInstance.Directories
-							table.insert(ActiveInstance.Return, ActiveInstance.Directory .. "/" .. ActiveInstance.Files[I])
+							insert(ActiveInstance.Return, ActiveInstance.Directory .. "/" .. ActiveInstance.Files[I])
 						else
-							table.insert(ActiveInstance.Return, ActiveInstance.Directory .. "/" .. ActiveInstance.Directories[I])
+							insert(ActiveInstance.Return, ActiveInstance.Directory .. "/" .. ActiveInstance.Directories[I])
 						end
 					end
 				end
@@ -159,11 +165,19 @@ local function FileDialogItem(Id, Label, IsDirectory, Index)
 		UpdateInputText(ActiveInstance)
 	end
 
-	if ListBox.IsItemClicked(1, true) and IsDirectory then
-		OpenDirectory(ActiveInstance.Directory .. "/" .. Label)
+	local Result = false
+
+	if ListBox.IsItemClicked(1, true) then
+		if IsDirectory then
+			OpenDirectory(ActiveInstance.Directory .. "/" .. Label)
+		else
+			Result = true
+		end
 	end
 
 	ListBox.EndItem()
+
+	return Result
 end
 
 local function AddDirectoryItem(Path)
@@ -186,7 +200,7 @@ local function FileDialogExplorer(Instance, Root)
 	end
 
 	if Root ~= nil then
-		local ShouldOpen = string.find(Instance.Directory, Root.Path, 1, true) ~= nil
+		local ShouldOpen = Window.IsAppearing() and string.find(Instance.Directory, Root.Path, 1, true) ~= nil
 
 		local Options = {
 			Label = Root.Name,
@@ -215,7 +229,7 @@ local function FileDialogExplorer(Instance, Root)
 						V = string.sub(V, 2)
 					end
 					local Item = AddDirectoryItem(Path .. FileSystem.GetBaseName(V))
-					table.insert(Root.Children, Item)
+					insert(Root.Children, Item)
 				end
 			end
 
@@ -284,6 +298,7 @@ local function GetInstance(Id)
 		local Instance = {}
 		Instance.Id = Id
 		Instance.IsOpen = false
+		Instance.Opening = false
 		Instance.W = 0.0
 		Instance.H = 0.0
 		Instances[Id] = Instance
@@ -298,17 +313,23 @@ function Dialog.Begin(Id, Options)
 	end
 
 	Options = Options == nil and {} or Options
-	Options.X = math.floor(love.graphics.getWidth() * 0.5 - Instance.W * 0.5)
-	Options.Y = math.floor(love.graphics.getHeight() * 0.5 - Instance.H * 0.5)
+	Options.X = floor(Scale.GetScreenWidth() * 0.5 - Instance.W * 0.5)
+	Options.Y = floor(Scale.GetScreenHeight() * 0.5 - Instance.H * 0.5)
 	Options.Layer = 'Dialog'
 	Options.AllowFocus = false
 	Options.AllowMove = false
 	Options.AutoSizeWindow = Options.AutoSizeWindow == nil and true or Options.AutoSizeWindow
+	Options.NoSavedSettings = true
 
 	Window.Begin(Instance.Id, Options)
 
+	if Instance.Opening then
+		Input.SetFocused(nil)
+		Instance.Opening = false
+	end
+
 	ActiveInstance = Instance
-	table.insert(InstanceStack, 1, ActiveInstance)
+	insert(InstanceStack, 1, ActiveInstance)
 
 	return true
 end
@@ -318,7 +339,7 @@ function Dialog.End()
 	Window.End()
 
 	ActiveInstance = nil
-	table.remove(InstanceStack, 1)
+	remove(InstanceStack, 1)
 
 	if #InstanceStack > 0 then
 		ActiveInstance = InstanceStack[1]
@@ -328,8 +349,9 @@ end
 function Dialog.Open(Id)
 	local Instance = GetInstance(Id)
 	if not Instance.IsOpen then
+		Instance.Opening = true
 		Instance.IsOpen = true
-		table.insert(Stack, 1, Instance)
+		insert(Stack, 1, Instance)
 		Window.SetStackLock(Instance.Id)
 		Window.PushToTop(Instance.Id)
 	end
@@ -338,7 +360,7 @@ end
 function Dialog.Close()
 	if ActiveInstance ~= nil and ActiveInstance.IsOpen then
 		ActiveInstance.IsOpen = false
-		table.remove(Stack, 1)
+		remove(Stack, 1)
 		Window.SetStackLock(nil)
 
 		if #Stack > 0 then
@@ -353,29 +375,70 @@ function Dialog.IsOpen()
 	return #Stack > 0
 end
 
+function Dialog.MessageBox(Title, Message, Options)
+    local Result = ""
+    Dialog.Open('MessageBox')
+    if Dialog.Begin('MessageBox', {Title = Title, Border = 12}) then
+        Options = Options == nil and {} or Options
+        Options.Buttons = Options.Buttons == nil and {"OK"} or Options.Buttons
+
+        LayoutManager.Begin('MessageBox_Message_Layout', {AlignX = 'center', AlignY = 'center'})
+        LayoutManager.NewLine()
+        local TextW = min(Text.GetWidth(Message), Scale.GetScreenWidth() * 0.80)
+        Text.BeginFormatted(Message, {Align = 'center', W = TextW})
+        LayoutManager.End()
+
+        Cursor.NewLine()
+        Cursor.NewLine()
+
+        LayoutManager.Begin('MessageBox_Buttons_Layout', {AlignX = 'right', AlignY = 'bottom'})
+        for I, V in ipairs(Options.Buttons) do
+            if Button.Begin(V) then
+                Result = V
+            end
+            Cursor.SameLine()
+            LayoutManager.SameLine()
+        end
+        LayoutManager.End()
+
+        if Result ~= "" then
+            Dialog.Close()
+        end
+
+        Dialog.End()
+    end
+
+    return Result
+end
+
 function Dialog.FileDialog(Options)
 	Options = Options == nil and {} or Options
 	Options.AllowMultiSelect = Options.AllowMultiSelect == nil and true or Options.AllowMultiSelect
 	Options.Directory = Options.Directory == nil and nil or Options.Directory
 	Options.Type = Options.Type == nil and 'openfile' or Options.Type
+	Options.Title = Options.Title == nil and nil or Options.Title
 	Options.Filters = Options.Filters == nil and {{"*.*", "All Files"}} or Options.Filters
+	Options.IncludeParent = Options.IncludeParent == nil and true or Options.IncludeParent
 
-	local Title = "Open File"
-	if Options.Type == 'savefile' then
-		Options.AllowMultiSelect = false
-		Title = "Save File"
-	elseif Options.Type == 'opendirectory' then
-		Title = "Open Directory"
+	if Options.Title == nil then
+		Options.Title = "Open File"
+
+		if Options.Type == 'savefile' then
+			Options.AllowMultiSelect = false
+			Options.Title = "Save File"
+		elseif Options.Type == 'opendirectory' then
+			Options.Title = "Open Directory"
+		end
 	end
 
 	local Result = {Button = "", Files = {}}
 	local WasOpen = IsInstanceOpen('FileDialog')
 
 	Dialog.Open("FileDialog")
-	local W = love.graphics.getWidth() * 0.65
-	local H = love.graphics.getHeight() * 0.65
+	local W = Scale.GetScreenWidth() * 0.65
+	local H = Scale.GetScreenHeight() * 0.65
 	if Dialog.Begin('FileDialog', {
-		Title = Title,
+		Title = Options.Title,
 		AutoSizeWindow = false,
 		W = W,
 		H = H,
@@ -428,10 +491,79 @@ function Dialog.FileDialog(Options)
 		local ListH = WinH - Text.GetHeight() - ButtonH * 3.0 - Cursor.PadY() * 2.0
 		local PrevAnchorX = Cursor.GetAnchorX()
 
-		Text.Begin(ActiveInstance.Directory)
+		-- Parent directory button for quick access
+		local FontH = Style.Font:getHeight()
+		local UpImage = {Path = SLAB_FILE_PATH .. "/Internal/Resources/Textures/Icons.png", SubX = 50.0, SubY = 0.0, SubW = 50.0, SubH = 50.0}
+		if Button.Begin("", {Image = UpImage, Color = {0, 0, 0, 0}, PadX = 2, PadY = 2, W = FontH, H = FontH}) then
+			local Destination = FileSystem.Sanitize(ActiveInstance.Directory .. FileSystem.Separator() .. "..")
 
+			-- Only attempt to move to parent directory if not the root drive.
+			if not FileSystem.IsDrive(Destination) then
+				OpenDirectory(Destination)
+			end
+		end
+
+		-- TODO: Place in region so that it can be scrolled.
+		Cursor.SameLine()
 		local CursorX, CursorY = Cursor.GetPosition()
+		local RemainingW, RemianingH = Window.GetRemainingSize()
 		local MouseX, MouseY = Window.GetMousePosition()
+
+		Region.Begin('FileDialog_BreadCrumbs', {
+			X = CursorX,
+			Y = CursorY,
+			W = RemainingW,
+			H = FontH,
+			AutoSizeContent = true,
+			NoBackground = true,
+			Intersect = true,
+			MouseX = MouseX,
+			MouseY = MouseY,
+			IsObstructed = Window.IsObstructedAtMouse(),
+			Rounding = Style.Rounding,
+			IgnoreScroll = true
+		})
+
+		-- Add some padding from left border. The cursor internally adds it's own padding.
+		Cursor.AdvanceX(0.0)
+
+		-- Gather each directory name and render as bread crumbs on top of each view.
+		local Tokens = {}
+		for Token in gmatch(ActiveInstance.Directory, "([^" .. FileSystem.Separator() .. "]+)") do insert(Tokens, Token) end
+		for I, Token in ipairs(Tokens) do
+			Window.PushID(Token .. '_Crumb')
+
+			local Clicked = Text.Begin(Token, {IsSelectableTextOnly = true})
+
+			-- Render an arrow between elements to provide spacing.
+			if I < #Tokens then
+				Cursor.SameLine()
+				Image.Begin(Token .. '_Crumb', {Path = UpImage.Path, SubX = 100.0, SubY = 0.0, SubW = 50.0, SubH = 50.0, W = FontH, H = FontH})
+				Cursor.SameLine()
+			end
+
+			if Clicked then
+				local Destination = nil
+				for J = 1, I, 1 do
+					Destination = Destination and (Destination .. FileSystem.Separator() .. Tokens[J]) or Tokens[J]
+				end
+
+				if Destination ~= nil then
+					OpenDirectory(Destination)
+				end
+			end
+			Window.PopID()
+		end
+
+		-- Move the region's scrollable area to always have the current directory in view.
+		local ContentW, ContentH = Region.GetContentSize()
+		Region.ResetTransform()
+		Region.Translate(nil, math.min(RemainingW - ContentW - 4.0, 0.0), 0.0)
+		Region.End()
+		Region.ApplyScissor()
+
+		CursorX, CursorY = Cursor.GetPosition()
+		MouseX, MouseY = Window.GetMousePosition()
 		Region.Begin('FileDialog_DirectoryExplorer', {
 			X = CursorX,
 			Y = CursorY,
@@ -458,14 +590,28 @@ function Dialog.FileDialog(Options)
 
 		LayoutManager.Begin('FileDialog_ListBox_Expand', {AnchorX = true, ExpandW = true})
 		ListBox.Begin('FileDialog_ListBox', {H = ListH, Clear = Clear})
+
 		local Index = 1
+		local ItemSelected = false
+		if Options.IncludeParent then
+			if FileDialogItem('Item_Parent', "..", true, Index) then
+				ItemSelected = true
+			end
+
+			Index = Index + 1
+		end
+
 		for I, V in ipairs(ActiveInstance.Directories) do
 			FileDialogItem('Item_' .. Index, V, true, Index)
 			Index = Index + 1
 		end
-		for I, V in ipairs(ActiveInstance.Files) do
-			FileDialogItem('Item_' .. Index, V, false, Index)
-			Index = Index + 1
+		if Options.Type ~= 'opendirectory' then
+			for I, V in ipairs(ActiveInstance.Files) do
+				if FileDialogItem('Item_' .. Index, V, false, Index) then
+					ItemSelected = true
+				end
+				Index = Index + 1
+			end
 		end
 		ListBox.End()
 		LayoutManager.End()
@@ -501,7 +647,7 @@ function Dialog.FileDialog(Options)
 		FilterW = FilterCBW
 
 		LayoutManager.Begin('FileDialog_Buttons_Layout', {AlignX = 'right', AlignY = 'bottom'})
-		if Button.Begin("OK") then
+		if Button.Begin("OK") or ItemSelected then
 			local OpeningDirectory = false
 			if #ActiveInstance.Return == 1 and Options.Type ~= 'opendirectory' then
 				local Path = ActiveInstance.Return[1]

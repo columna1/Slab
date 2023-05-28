@@ -1,12 +1,36 @@
-v0.7.0 RELEASE
+v0.9.0
 ==========
-[API]: Update version number.
+[Stats] Added GetStats and CalculateStats. See fixed #91 (@flamendless)
+[Window]: Added minimize/maximize button in title bar to hide/show contents #100 (@flamendless)
+[Slab Logo]: Added Slab logo. Credits to ig@haven.graphicdesigns
+[Window]: Allow horizontal scrolling when there is no vertical scrolling possible #87 (@flamendless)
+[Dock]: Dock now follows Window's option for W and H #92 (@flamendless)
+[Dock]: Allow to programmatically set a window to a dock #92 (@flamendless)
+[Input]: Added NeedDrag option to InputNumberSlider
+[Button]: Added VLines option for multiline button label #81 (@flamendless)
+[Layout]: Added GetCurrentColumnIndex #89 (@flamendless)
+[Properties]: Improved Properties to use ordered table #93 (@flamendless)
+[Mouse]: Read mouse arguments out of Args table #94 (@idbrii)
+
+BUGFIXES
+==========
+[Dialog]: MessageBox expands if there are multiple buttons #99 (@flamendless)
+[Image]: Cache not updating correctly when Image object is passed #98 (@flamendless)
+[ContextMenu]: Context Menu now works with void spaces again #96 (@flamendless)
+[Tree]: Not returning IsOpen flag correctly #90 (@flamendless)
+
+v0.8.0
+==========
+[API]: Make Update and Draw functions private.
+[Android]: Receive feedback and make fixes to errant behavior. Applies to issue #35.
+[Frame]: API calls to setup frames (child regions in Dear ImGui). Can hook into Regions module and expose some functionality from this for this feature. #46.
+[LayoutManager]: Right aligned controls are flush on the edge. Should flush with the window border.
+[Mouse/Keyboard]: Allow multiple 'Update' calls. This will conflict with the async input processing. Might need to keep a cache of the last async update and always apply that to every 'Update' call.
 
 BUGS
 ==========
 [Combo Box]: Selectable text not expanding to full width of window.
 [File Dialog]: Excess right border.
-[File System][Mac]: 'Unknown primary or operator' error message.
 [List Box]: View transform pops while parent window is resizing when scroll is in non-zero position.
 [List Box]: Region size not reset when list items change.
 [List Box]: Window not properly auto-sized.
@@ -20,7 +44,7 @@ TODO
 [Animation]: Initial animation support.
 [API]: Re-organize functions in categories and update comment.
 [API]: Get/Set cursor padding.
-[Color Picker]: Set initial position.
+[API]: Utilitze 'args' parameter for configuring docks, save state.
 [Column]: Investigate moving Column rendering to its own draw channel within an active batch to reduce scissor calls.
 [Column]: Move separator with mouse.
 Combo Box: Easy API with table of possible values.
@@ -29,10 +53,9 @@ Controls: Convert all window bounds check to use region.
 [Date Time]: Initial implementation for a date/time control.
 Dialog: Function to close all dialog boxes.
 Dialog: Modal/Non-modal dialogs.
-[Dock]: Initial implementation of docking.
+[Dock]: Flickers when using a custom love.run function with a fixed update interval.
 [Documentation]: Command-line option to just dump all functions listed in API table.
 [Error]: Dialog that shows any error messages.
-[Error]: Show messages for deprecated API.
 [Graph]: Initial line graph implementation.
 [Input]: Drag select word versus character.
 [Input]: Auto-grow control with MulitLine.
@@ -44,8 +67,6 @@ Main Menu Bar: Assert if called within a window context.
 Region: Clamp position check with owning window's size.
 [Scroll Bar]: Velocity based movement for mouse wheel scrolling.
 [Scroll Bar]: Focus owning window if scroll bar is clicked.
-[Separator]: Option to change the line thickness.
-[Slab]: Store settings such as window positions and style.
 [Slab]: Move all love.* calls into interfaces for portability with other Lua based frameworks.
 SlabDebug: Show image stats.
 [SlabDebug]: Window management tools.
@@ -58,7 +79,6 @@ Style: Add documentation for each style property.
 [Text]: Tooltip support.
 [Text]: Stats for text objects.
 [Text]: Deprecate SelectOnHover option.
-[Text]: Support for HTTP link.
 [Tree]: Fix for BeginContextMenuItem for root and children items.
 Window: Menu support.
 Window: Ids should be used as keys.

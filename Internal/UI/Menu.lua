@@ -2,7 +2,7 @@
 
 MIT License
 
-Copyright (c) 2019 Mitchell Davis <coding.jackalope@gmail.com>
+Copyright (c) 2019-2021 Love2D Community <love2d.org>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -24,6 +24,10 @@ SOFTWARE.
 
 --]]
 
+local insert = table.insert
+local remove = table.remove
+local max = math.max
+
 local Cursor = require(SLAB_PATH .. '.Internal.Core.Cursor')
 local DrawCommands = require(SLAB_PATH .. '.Internal.Core.DrawCommands')
 local MenuState = require(SLAB_PATH .. '.Internal.UI.MenuState')
@@ -31,6 +35,8 @@ local Mouse = require(SLAB_PATH .. '.Internal.Input.Mouse')
 local Style = require(SLAB_PATH .. '.Style')
 local Text = require(SLAB_PATH .. '.Internal.UI.Text')
 local Window = require(SLAB_PATH .. '.Internal.UI.Window')
+local Scale = require(SLAB_PATH .. ".Internal.Core.Scale")
+
 
 local Menu = {}
 local Instances = {}
@@ -40,18 +46,41 @@ local LeftPad = 25.0
 local RightPad = 70.0
 local CheckSize = 5.0
 local OpenedContextMenu = nil
-local CursorStack = {}
+
+local function IsItemHovered()
+	local ItemX, ItemY, ItemW, ItemH = Cursor.GetItemBounds()
+	local MouseX, MouseY = Window.GetMousePosition()
+	return not Window.IsObstructedAtMouse()
+		and ItemX < MouseX and MouseX < ItemX + Window.GetWidth()
+		and ItemY < MouseY and MouseY < ItemY + ItemH
+end
+
+local function AlterOptions(Options)
+	Options = Options == nil and {} or Options
+	Options.Enabled = Options.Enabled == nil and true or Options.Enabled
+	Options.IsSelectable = Options.Enabled
+	Options.SelectOnHover = Options.Enabled
+	Options.PadH = Style.MenuItemPadH
+
+	if Options.Enabled then
+		Options.Color = Style.TextColor
+	else
+		Options.Color = Style.TextDisabledColor
+	end
+
+	return Options
+end
 
 local function ConstrainPosition(X, Y, W, H)
 	local ResultX, ResultY = X, Y
 
 	local Right = X + W
 	local Bottom = Y + H
-	local OffsetX = Right >= love.graphics.getWidth()
-	local OffsetY = Bottom >= love.graphics.getHeight()
+	local OffsetX = Right >= Scale.GetScreenWidth()
+	local OffsetY = Bottom >= Scale.GetScreenHeight()
 
 	if OffsetX then
-		ResultX = X - (Right - love.graphics.getWidth())
+		ResultX = X - (Right - Scale.GetScreenWidth())
 	end
 
 	if OffsetY then
@@ -63,18 +92,19 @@ local function ConstrainPosition(X, Y, W, H)
 		ResultX = WinX - W
 	end
 
-	ResultX = math.max(ResultX, 0.0)
-	ResultY = math.max(ResultY, 0.0)
+	ResultX = max(ResultX, 0.0)
+	ResultY = max(ResultY, 0.0)
 
 	return ResultX, ResultY
 end
 
-local function BeginWindow(Id, X, Y)
+local function BeginWindow(Id, X, Y, RoundAllCorners)
 	local Instance = Instances[Id]
 	if Instance ~= nil then
 		X, Y = ConstrainPosition(X, Y, Instance.W, Instance.H)
 	end
 
+	Cursor.PushContext()
 	Window.Begin(Id,
 	{
 		X = X,
@@ -87,22 +117,25 @@ local function BeginWindow(Id, X, Y)
 		AutoSizeWindow = true,
 		Layer = 'ContextMenu',
 		BgColor = Style.MenuColor,
-		Rounding = {0, 0, 2, 2}
+		Rounding = RoundAllCorners and {2, 2, 2, 2} or {0, 0, 2, 2},
+		NoSavedSettings = true
 	})
 end
 
-function Menu.BeginMenu(Label)
+function Menu.BeginMenu(Label, Options)
 	local Result = false
 	local X, Y = Cursor.GetPosition()
 	local IsMenuBar = Window.IsMenuBar()
 	local Id = Window.GetId() .. "." .. Label
 	local Win = Window.Top()
 
-	local Options = {IsSelectable = true, SelectOnHover = true, IsSelected = Win.Selected == Id}
+	Options = AlterOptions(Options)
+	Options.IsSelected = Options.Enabled and Win.Selected == Id
 
 	if IsMenuBar then
-		Options.IsSelectableTextOnly = true
+		Options.IsSelectableTextOnly = Options.Enabled
 		Options.Pad = Pad * 2
+		Options.PadH = Style.MenuPadH
 	else
 		Cursor.SetX(X + LeftPad)
 	end
@@ -110,21 +143,32 @@ function Menu.BeginMenu(Label)
 	local MenuX = 0.0
 	local MenuY = 0.0
 
+	-- 'Result' may be false if 'Enabled' is false. The hovered state is still required
+	-- so that will be handled differently.
 	Result = Text.Begin(Label, Options)
 	local ItemX, ItemY, ItemW, ItemH = Cursor.GetItemBounds()
 	if IsMenuBar then
 		Cursor.SameLine()
 
-		if Result then
+		-- Menubar items don't extend to the width of the window since these items are layed out horizontally. Only
+		-- need to perform hover check on item bounds.
+		local Hovered = Cursor.IsInItemBounds(Window.GetMousePosition())
+		if Hovered then
 			if Mouse.IsClicked(1) then
-				MenuState.WasOpened = MenuState.IsOpened
-				MenuState.IsOpened = not MenuState.IsOpened
+				if Result then
+					MenuState.WasOpened = MenuState.IsOpened
+					MenuState.IsOpened = not MenuState.IsOpened
+
+					if MenuState.IsOpened then
+						MenuState.RequestClose = false
+					end
+				elseif MenuState.WasOpened then
+					MenuState.RequestClose = false
+				end
 			end
 		end
 
-		if MenuState.IsOpened then
-			MenuState.RequestClose = Mouse.IsClicked(1) and MenuState.WasOpened
-			
+		if MenuState.IsOpened and OpenedContextMenu == nil then
 			if Result then
 				Win.Selected = Id
 			end
@@ -150,46 +194,68 @@ function Menu.BeginMenu(Label)
 		end
 
 		Window.AddItem(ItemX, ItemY, ItemW + RightPad, ItemH)
+
+		-- Prevent closing the menu window if this item is clicked.
+		if IsItemHovered() and Mouse.IsClicked(1) then
+			MenuState.RequestClose = false
+		end
 	end
 
 	Result = Win.Selected == Id
 
 	if Result then
-		local CursorX, CursorY = Cursor.GetPosition()
-		table.insert(CursorStack, 1, {X = CursorX, Y = CursorY})
-
-		BeginWindow(Id, MenuX, MenuY)
+		BeginWindow(Id, MenuX, MenuY, not IsMenuBar)
 	end
 
 	return Result
 end
 
-function Menu.MenuItem(Label)
+function Menu.MenuItem(Label, Options)
+	Options = AlterOptions(Options)
+
+	local HintWidth = Options.Hint == nil and 0 or Text.GetWidth(Options.Hint)
+
 	Cursor.SetX(Cursor.GetX() + LeftPad)
-	local Result = Text.Begin(Label, {IsSelectable = true, SelectOnHover = true})
+	local Result = Text.Begin(Label, Options)
 	local ItemX, ItemY, ItemW, ItemH = Cursor.GetItemBounds()
-	Window.AddItem(ItemX, ItemY, ItemW + RightPad, ItemH)
+	Window.AddItem(ItemX, ItemY, ItemW + RightPad + HintWidth, ItemH)
+
+	if Options.Hint ~= nil then
+		Cursor.SameLine()
+		Text.BeginFormatted(Options.Hint, {
+			Align = "right",
+			W = Window.GetRemainingSize() - LeftPad, -- Pad the right side equal to the left side
+			H = ItemH,
+			Color = Style.TextDisabledColor,
+			RightPad = LeftPad, -- hack, see Text.BeginFormatted()
+		})
+	end
 
 	if Result then
 		local Win = Window.Top()
 		Win.Selected = nil
 
 		Result = Mouse.IsClicked(1)
-		if Result then
-			MenuState.IsOpened = false
+		if Result and MenuState.WasOpened then
+			MenuState.RequestClose = true
+		end
+	else
+		if IsItemHovered() and Mouse.IsClicked(1) then
+			MenuState.RequestClose = false
 		end
 	end
 
 	return Result
 end
 
-function Menu.MenuItemChecked(Label, IsChecked)
+function Menu.MenuItemChecked(Label, IsChecked, Options)
+	Options = AlterOptions(Options)
 	local X, Y = Cursor.GetPosition()
-	local Result = Menu.MenuItem(Label)
+	local Result = Menu.MenuItem(Label, Options)
 
 	if IsChecked then
-		local H = Style.Font:getHeight()
-		DrawCommands.Check(X + LeftPad * 0.5, Y + H * 0.5, CheckSize, Style.TextColor)
+		local H = Style.Font:getHeight() + Options.PadH
+		DrawCommands.Check(X + LeftPad * 0.5, Y + H * 0.5, CheckSize, Options.Color)
 	end
 
 	return Result
@@ -213,12 +279,7 @@ function Menu.EndMenu()
 	Instances[Id].H = Window.GetHeight()
 
 	Window.End()
-
-	if #CursorStack > 0 then
-		local Top = CursorStack[1]
-		Cursor.SetPosition(Top.X, Top.Y)
-		table.remove(CursorStack, 1)
-	end
+	Cursor.PopContext()
 end
 
 function Menu.Pad()
@@ -227,6 +288,9 @@ end
 
 function Menu.BeginContextMenu(Options)
 	Options = Options == nil and {} or Options
+	Options.IsItem = Options.IsItem == nil and false or Options.IsItem
+	Options.IsWindow = Options.IsWindow == nil and false or Options.IsWindow
+	Options.Button = Options.Button == nil and 2 or Options.Button
 
 	local BaseId = nil
 	local Id = nil
@@ -253,16 +317,14 @@ function Menu.BeginContextMenu(Options)
 
 	if MenuState.IsOpened and OpenedContextMenu ~= nil then
 		if OpenedContextMenu.Id == Id then
-			local CursorX, CursorY = Cursor.GetPosition()
-			table.insert(CursorStack, 1, {X = CursorX, Y = CursorY})
-			BeginWindow(OpenedContextMenu.Id, OpenedContextMenu.X, OpenedContextMenu.Y)
+			BeginWindow(OpenedContextMenu.Id, OpenedContextMenu.X, OpenedContextMenu.Y, true)
 			return true
 		end
 		return false
 	end
 
 	local IsOpening = false
-	if not Window.IsObstructedAtMouse() and Window.IsMouseHovered() and Mouse.IsClicked(2) then
+	if not Window.IsObstructedAtMouse() and Window.IsMouseHovered() and Mouse.IsClicked(Options.Button) then
 		local IsValidWindow = Options.IsWindow and Window.GetHotItem() == nil
 		local IsValidItem = Options.IsItem
 

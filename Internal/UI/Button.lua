@@ -2,7 +2,7 @@
 
 MIT License
 
-Copyright (c) 2019 Mitchell Davis <coding.jackalope@gmail.com>
+Copyright (c) 2019-2021 Love2D Community <love2d.org>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -24,187 +24,226 @@ SOFTWARE.
 
 --]]
 
+local floor = math.floor
+local max = math.max
+
 local Cursor = require(SLAB_PATH .. '.Internal.Core.Cursor')
 local DrawCommands = require(SLAB_PATH .. '.Internal.Core.DrawCommands')
+local Image = require(SLAB_PATH .. '.Internal.UI.Image')
 local LayoutManager = require(SLAB_PATH .. '.Internal.UI.LayoutManager')
 local Mouse = require(SLAB_PATH .. '.Internal.Input.Mouse')
 local Stats = require(SLAB_PATH .. '.Internal.Core.Stats')
 local Style = require(SLAB_PATH .. '.Style')
 local Text = require(SLAB_PATH .. '.Internal.UI.Text')
 local Tooltip = require(SLAB_PATH .. '.Internal.UI.Tooltip')
+local Utility = require(SLAB_PATH .. '.Internal.Core.Utility')
 local Window = require(SLAB_PATH .. '.Internal.UI.Window')
 
 local Button = {}
 
-local Pad = 10.0
-local MinWidth = 75.0
-local Radius = 8.0
-local ClickedId = nil
+local PAD = 10.0
+local MINWIDTH = 75.0
+local RADIUS = 8.0
+local EMPTY = {}
+local IGNORE = { Ignore = true }
 
-function Button.Begin(Label, Options)
-	local StatHandle = Stats.Begin('Button', 'Slab')
+local clickedId = nil
+local labelColor = {}
 
-	Options = Options == nil and {} or Options
-	Options.Tooltip = Options.Tooltip == nil and "" or Options.Tooltip
-	Options.Rounding = Options.Rounding == nil and Style.ButtonRounding or Options.Rounding
-	Options.Invisible = Options.Invisible == nil and false or Options.Invisible
-	Options.W = Options.W == nil and nil or Options.W
-	Options.H = Options.H == nil and nil or Options.H
-	Options.Disabled = Options.Disabled == nil and false or Options.Disabled
+function Button.Begin(label, options)
+	local statHandle = Stats.Begin('Button', 'Slab')
 
-	local Id = Window.GetItemId(Label)
-	local W, H = Button.GetSize(Label)
-	local LabelW = Style.Font:getWidth(Label)
-	local FontHeight = Style.Font:getHeight()
-	local TextColor = Options.Disabled and Style.ButtonDisabledTextColor or nil
+	options = options or EMPTY
+	local width, height = options.W, options.H
+	local disabled = options.Disabled
+	local image = options.Image
+	local color = options.Color or Style.ButtonColor
+	local hoverColor = options.HoverColor or Style.ButtonHoveredColor
+	local pressColor = options.PressColor or Style.ButtonPressedColor
+	local padX = options.PadX or PAD * 2.0
+	local padY = options.PadY or PAD * 0.5
+	local vLines = options.VLines or 1
 
-	if Options.W ~= nil then
-		W = Options.W
+	if options.Active then
+		color = pressColor
 	end
 
-	if Options.H ~= nil then
-		H = Options.H
+	local id = Window.GetItemId(label)
+	local w, h = Button.GetSize(label)
+	h = h * vLines
+
+	-- If a valid image was specified, then adjust the button size to match the requested image size. Also takes into account any sub UVs.
+	local imageW, imageH = w, h
+	if image ~= nil then
+		imageW, imageH = Image.GetSize(image.Image or image.Path)
+
+		imageW = image.SubW or imageW
+		imageH = image.SubH or imageH
+
+		imageW = width or imageW
+		imageH = height or imageH
+
+		image.W = imageW
+		image.H = imageH
+
+		if imageW > 0 and imageH > 0 then
+			w = imageW + padX
+			h = imageH + padY
+		end
 	end
 
-	W, H = LayoutManager.ComputeSize(W, H)
-	LayoutManager.AddControl(W, H)
+	w, h = LayoutManager.ComputeSize(width or w, height or h)
+	LayoutManager.AddControl(w, h, 'Button')
 
-	local X, Y = Cursor.GetPosition()
+	local x, y = Cursor.GetPosition()
 
-	local Result = false
-	local Color = Style.ButtonColor
+	local result = false
 
-	local MouseX, MouseY = Window.GetMousePosition()
-	if not Window.IsObstructedAtMouse() and X <= MouseX and MouseX <= X + W and Y <= MouseY and MouseY <= Y + H then
-		Tooltip.Begin(Options.Tooltip)
-		Window.SetHotItem(Id)
+	do
+		local mouseX, mouseY = Window.GetMousePosition()
+		if not Window.IsObstructedAtMouse() and x <= mouseX and mouseX <= x + w and y <= mouseY and mouseY <= y + h then
+			Tooltip.Begin(options.Tooltip or "")
+			Window.SetHotItem(id)
 
-		if not Options.Disabled then
-			Color = Style.ButtonHoveredColor
+			if not disabled then
+				if not Utility.IsMobile() then
+					color = hoverColor
+				end
 
-			if ClickedId == Id then
-				Color = Style.ButtonPressedColor
-			end
+				if clickedId == id then
+					color = pressColor
+				end
 
-			if Mouse.IsClicked(1) then
-				ClickedId = Id
-			end
+				if Mouse.IsClicked(1) then
+					clickedId = id
+				end
 
-			if Mouse.IsReleased(1) and ClickedId == Id then
-				Result = true
-				ClickedId = nil
+				if Mouse.IsReleased(1) and clickedId == id then
+					result = true
+					clickedId = nil
+				end
 			end
 		end
 	end
 
-	local LabelX = X + (W * 0.5) - (LabelW * 0.5)
+	if not options.Invisible then
+		-- Draw the background.
+		DrawCommands.Rectangle('fill', x, y, w, h, color, options.Rounding or Style.ButtonRounding)
 
-	if not Options.Invisible then
-		DrawCommands.Rectangle('fill', X, Y, W, H, Color, Options.Rounding)
-		local X, Y = Cursor.GetPosition()
-		Cursor.SetX(math.floor(LabelX))
-		Cursor.SetY(math.floor(Y + (H * 0.5) - (FontHeight * 0.5)))
-		LayoutManager.Begin('Ignore', {Ignore = true})
-		Text.Begin(Label, {Color = TextColor})
+		-- Draw the label or image. The layout of this control was already computed above. Ignore when adding sub-controls
+		-- such as text or an image.
+		local cursorX, cursorY = Cursor.GetPosition()
+		LayoutManager.Begin('Ignore', IGNORE)
+		if image ~= nil then
+			Cursor.SetX(x + w * 0.5 - imageW * 0.5)
+			Cursor.SetY(y + h * 0.5 - imageH * 0.5)
+			Image.Begin(id .. '_Image', image)
+		else
+			local labelX = x + (w * 0.5) - (Style.Font:getWidth(label) * 0.5)
+			local fontHeight = Style.Font:getHeight() * vLines
+			Cursor.SetX(floor(labelX))
+			Cursor.SetY(floor(y + (h * 0.5) - (fontHeight * 0.5)))
+			labelColor.color = disabled and Style.ButtonDisabledTextColor or nil
+			Text.Begin(label, labelColor)
+		end
 		LayoutManager.End()
-		Cursor.SetPosition(X, Y)
+
+		Cursor.SetPosition(cursorX, cursorY)
 	end
 
-	Cursor.SetItemBounds(X, Y, W, H)
-	Cursor.AdvanceY(H)
+	Cursor.SetItemBounds(x, y, w, h)
+	Cursor.AdvanceY(h)
 
-	Window.AddItem(X, Y, W, H, Id)
+	Window.AddItem(x, y, w, h, id)
 
-	Stats.End(StatHandle)
+	Stats.End(statHandle)
 
-	return Result
+	return result
 end
 
-function Button.BeginRadio(Label, Options)
-	local StatHandle = Stats.Begin('RadioButton', 'Slab')
+function Button.BeginRadio(label, options)
+	local statHandle = Stats.Begin('RadioButton', 'Slab')
 
-	Label = Label == nil and "" or Label
+	label = label or ""
 
-	Options = Options == nil and {} or Options
-	Options.Index = Options.Index == nil and 0 or Options.Index
-	Options.SelectedIndex = Options.SelectedIndex == nil and 0 or Options.SelectedIndex
-	Options.Tooltip = Options.Tooltip == nil and "" or Options.Tooltip
+	options = options or EMPTY
+	local index = options.Index or 0
+	local selectedIndex = options.SelectedIndex or 0
 
-	local Result = false
-	local Id = Window.GetItemId(Label)
-	local W, H = Radius * 2.0, Radius * 2.0
-	local IsObstructed = Window.IsObstructedAtMouse()
-	local Color = Style.ButtonColor
-	local MouseX, MouseY = Window.GetMousePosition()
+	local result = false
+	local id = Window.GetItemId(label)
+	local w, h = RADIUS * 2.0, RADIUS * 2.0
+	local isObstructed = Window.IsObstructedAtMouse()
+	local color = Style.ButtonColor
+	local mouseX, mouseY = Window.GetMousePosition()
 
-	if Label ~= "" then
-		local TextW, TextH = Text.GetSize(Label)
-		W = W + Cursor.PadX() + TextW
-		H = math.max(H, TextH)
+	if label ~= "" then
+		local TextW, TextH = Text.GetSize(label)
+		w = w + Cursor.PadX() + TextW
+		h = max(h, TextH)
 	end
 
-	LayoutManager.AddControl(W, H)
+	LayoutManager.AddControl(w, h, 'Radio')
 
-	local X, Y = Cursor.GetPosition()
-	local CenterX, CenterY = X + Radius, Y + Radius
-	local DX = MouseX - CenterX
-	local DY = MouseY - CenterY
-	local HoveredButton = not IsObstructed and (DX * DX) + (DY * DY) <= Radius * Radius
-	if HoveredButton then
-		Color = Style.ButtonHoveredColor
+	local x, y = Cursor.GetPosition()
+	local centerX, centerY = x + RADIUS, y + RADIUS
+	local dx = mouseX - centerX
+	local dy = mouseY - centerY
+	if not isObstructed and (dx * dx) + (dy * dy) <= RADIUS * RADIUS then
+		color = Style.ButtonHoveredColor
 
-		if ClickedId == Id then
-			Color = Style.ButtonPressedColor
+		if clickedId == id then
+			color = Style.ButtonPressedColor
 		end
 
 		if Mouse.IsClicked(1) then
-			ClickedId = Id
+			clickedId = id
 		end
 
-		if Mouse.IsReleased(1) and ClickedId == Id then
-			Result = true
-			ClickedId = nil
+		if Mouse.IsReleased(1) and clickedId == id then
+			result = true
+			clickedId = nil
 		end
 	end
 
-	DrawCommands.Circle('fill', CenterX, CenterY, Radius, Color)
+	DrawCommands.Circle('fill', centerX, centerY, RADIUS, color)
 
-	if Options.Index > 0 and Options.Index == Options.SelectedIndex then
-		DrawCommands.Circle('fill', CenterX, CenterY, Radius * 0.7, Style.RadioButtonSelectedColor)
+	if index > 0 and index == selectedIndex then
+		DrawCommands.Circle('fill', centerX, centerY, RADIUS * 0.7, Style.RadioButtonSelectedColor)
 	end
 
-	if Label ~= "" then
-		local CursorY = Cursor.GetY()
-		Cursor.AdvanceX(Radius * 2.0)
-		LayoutManager.Begin('Ignore', {Ignore = true})
-		Text.Begin(Label)
+	if label ~= "" then
+		local cursorY = Cursor.GetY()
+		Cursor.AdvanceX(RADIUS * 2.0)
+		LayoutManager.Begin('Ignore', IGNORE)
+		Text.Begin(label)
 		LayoutManager.End()
-		Cursor.SetY(CursorY)
+		Cursor.SetY(cursorY)
 	end
 
-	if not IsObstructed and X <= MouseX and MouseX <= X + W and Y <= MouseY and MouseY <= Y + H then
-		Tooltip.Begin(Options.Tooltip)
-		Window.SetHotItem(Id)
+	if not isObstructed and x <= mouseX and mouseX <= x + w and y <= mouseY and mouseY <= y + h then
+		Tooltip.Begin(options.Tooltip or "")
+		Window.SetHotItem(id)
 	end
 
-	Cursor.SetItemBounds(X, Y, W, H)
-	Cursor.AdvanceY(H)
+	Cursor.SetItemBounds(x, y, w, h)
+	Cursor.AdvanceY(h)
 
-	Window.AddItem(X, Y, W, H)
+	Window.AddItem(x, y, w, h)
 
-	Stats.End(StatHandle)
+	Stats.End(statHandle)
 
-	return Result
+	return result
 end
 
-function Button.GetSize(Label)
-	local W = Style.Font:getWidth(Label)
-	local H = Style.Font:getHeight()
-	return math.max(W, MinWidth) + Pad * 2.0, H + Pad * 0.5
+function Button.GetSize(label)
+	local w = Style.Font:getWidth(label)
+	local h = Style.Font:getHeight()
+	return max(w, MINWIDTH) + PAD * 2.0, h + PAD * 0.5
 end
 
 function Button.ClearClicked()
-	ClickedId = nil
+	clickedId = nil
 end
 
 return Button

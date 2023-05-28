@@ -38,28 +38,48 @@ local Region = {}
 local Instances = {}
 local Stack = {}
 local ActiveInstance = nil
+<<<<<<< HEAD
+local ScrollPad = 3.0
+local ScrollBarSize = 10.0
+local WheelX = 0.0
+local WheelY = 0.0
+local WheelSpeed = 30.0
+=======
 local ScrollPad = 3
 local ScrollBarSize = 10
 local WheelX = 0
 local WheelY = 0
-local WheelSpeed = 30
+local WheelSpeed = 3
+>>>>>>> upstream/master
 local HotInstance = nil
 local WheelInstance = nil
 local ScrollInstance = nil
 
+<<<<<<< HEAD
+local function GetXScrollSize(Instance)
+	if Instance ~= nil then
+		return math.max(Instance.W * (Instance.W / Instance.ContentW), 10.0)
+=======
 local EMPTY = {}
 local tempColor = {}
 
 local function GetXScrollSize(instance)
 	if instance ~= nil then
-		return max(instance.W * (instance.W / instance.ContentW), 10)
+		return max(instance.W - (instance.ContentW - instance.W), 10)
+>>>>>>> upstream/master
 	end
 	return 0
 end
 
+<<<<<<< HEAD
+local function GetYScrollSize(Instance)
+	if Instance ~= nil then
+		return math.max(Instance.H * ( Instance.H / Instance.ContentH), 10.0)
+=======
 local function GetYScrollSize(instance)
 	if instance ~= nil then
-		return max(Instance.H * ( instance.H / instance.ContentH), 10)
+		return max(instance.H - (instance.ContentH - instance.H), 10)
+>>>>>>> upstream/master
 	end
 	return 0
 end

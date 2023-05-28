@@ -2,7 +2,7 @@
 
 MIT License
 
-Copyright (c) 2019 Mitchell Davis <coding.jackalope@gmail.com>
+Copyright (c) 2019-2021 Love2D Community <love2d.org>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -23,6 +23,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 --]]
+
+local insert = table.insert
+local abs = math.abs
+local max = math.max
+local min = math.min
+local huge = math.huge
 
 local Cursor = require(SLAB_PATH .. '.Internal.Core.Cursor')
 local DrawCommands = require(SLAB_PATH .. '.Internal.Core.DrawCommands')
@@ -49,7 +55,7 @@ function Shape.Rectangle(Options)
 
 	local W = Options.W
 	local H = Options.H
-	LayoutManager.AddControl(W, H)
+	LayoutManager.AddControl(W, H, 'Rectangle')
 
 	local X, Y = Cursor.GetPosition()
 
@@ -77,7 +83,7 @@ function Shape.Circle(Options)
 
 	local Diameter = Options.Radius * 2.0
 
-	LayoutManager.AddControl(Diameter, Diameter)
+	LayoutManager.AddControl(Diameter, Diameter, 'Circle')
 
 	local X, Y = Cursor.GetPosition()
 	local CenterX = X + Options.Radius
@@ -102,7 +108,7 @@ function Shape.Triangle(Options)
 
 	local Diameter = Options.Radius * 2.0
 
-	LayoutManager.AddControl(Diameter, Diameter)
+	LayoutManager.AddControl(Diameter, Diameter, 'Triangle')
 
 	local X, Y = Cursor.GetPosition()
 	local CenterX = X + Options.Radius
@@ -124,8 +130,8 @@ function Shape.Line(X2, Y2, Options)
 	Options.Color = Options.Color == nil and nil or Options.Color
 
 	local X, Y = Cursor.GetPosition()
-	local W, H = math.abs(X2 - X), math.abs(Y2 - Y)
-	H = math.max(H, Options.Width)
+	local W, H = abs(X2 - X), abs(Y2 - Y)
+	H = max(H, Options.Width)
 
 	DrawCommands.Line(X, Y, X2, Y2, Options.Width, Options.Color)
 	Window.AddItem(X, Y, W, H)
@@ -144,21 +150,21 @@ function Shape.Curve(Points, Options)
 
 	Curve = love.math.newBezierCurve(Points)
 
-	local MinX, MinY = math.huge, math.huge
+	local MinX, MinY = huge, huge
 	local MaxX, MaxY = 0, 0
 	for I = 1, Curve:getControlPointCount(), 1 do
 		local PX, PY = Curve:getControlPoint(I)
-		MinX = math.min(MinX, PX)
-		MinY = math.min(MinY, PY)
+		MinX = min(MinX, PX)
+		MinY = min(MinY, PY)
 
-		MaxX = math.max(MaxX, PX)
-		MaxY = math.max(MaxY, PY)
+		MaxX = max(MaxX, PX)
+		MaxY = max(MaxY, PY)
 	end
 
-	local W = math.abs(MaxX - MinX)
-	local H = math.abs(MaxY - MinY)
+	local W = abs(MaxX - MinX)
+	local H = abs(MaxY - MinY)
 
-	LayoutManager.AddControl(W, H)
+	LayoutManager.AddControl(W, H, 'Curve')
 
 	CurveX, CurveY = Cursor.GetPosition()
 	Curve:translate(CurveX, CurveY)
@@ -226,35 +232,35 @@ function Shape.Polygon(Points, Options)
 	Options.Color = Options.Color == nil and nil or Options.Color
 	Options.Mode = Options.Mode == nil and 'fill' or Options.Mode
 
-	local MinX, MinY = math.huge, math.huge
+	local MinX, MinY = huge, huge
 	local MaxX, MaxY = 0, 0
 	local Verts = {}
 
 	for I = 1, #Points, 2 do
-		MinX = math.min(MinX, Points[I])
-		MinY = math.min(MinY, Points[I+1])
+		MinX = min(MinX, Points[I])
+		MinY = min(MinY, Points[I+1])
 
-		MaxX = math.max(MaxX, Points[I])
-		MaxY = math.max(MaxY, Points[I+1])
+		MaxX = max(MaxX, Points[I])
+		MaxY = max(MaxY, Points[I+1])
 	end
 
-	local W = math.abs(MaxX - MinX)
-	local H = math.abs(MaxY - MinY)
+	local W = abs(MaxX - MinX)
+	local H = abs(MaxY - MinY)
 
-	LayoutManager.AddControl(W, H)
+	LayoutManager.AddControl(W, H, 'Polygon')
 
-	MinX, MinY = math.huge, math.huge
+	MinX, MinY = huge, huge
 	MaxX, MaxY = 0, 0
 	local X, Y = Cursor.GetPosition()
 	for I = 1, #Points, 2 do
-		table.insert(Verts, Points[I] + X)
-		table.insert(Verts, Points[I+1] + Y)
+		insert(Verts, Points[I] + X)
+		insert(Verts, Points[I+1] + Y)
 
-		MinX = math.min(MinX, Verts[I])
-		MinY = math.min(MinY, Verts[I+1])
+		MinX = min(MinX, Verts[I])
+		MinY = min(MinY, Verts[I+1])
 
-		MaxX = math.max(MaxX, Verts[I])
-		MaxY = math.max(MaxY, Verts[I+1])
+		MaxX = max(MaxX, Verts[I])
+		MaxY = max(MaxY, Verts[I+1])
 	end
 
 	DrawCommands.Polygon(Options.Mode, Verts, Options.Color)

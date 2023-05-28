@@ -24,12 +24,32 @@ SOFTWARE.
 
 --]]
 
--- This file is for running a project within the Slab folder. This file
--- should not be used when using the Slab folder within another project.
-if SLAB_PATH == nil then
-	SLAB_PATH = (...):match("(.-)[^%.]+$") 
+local TablePool = {}
+TablePool.__index = TablePool
+
+function TablePool:pull()
+	local count = self[0]
+	if count == 0 then return {} end
+
+	local result = self[count]
+	self[count], self[0] = nil, count - 1
+
+	return result
 end
 
-local Slab = require(SLAB_PATH .. '.API')
+function TablePool:pullClean()
+	local result = self:pull()
+	for k in pairs(result) do
+		result[k] = nil
+	end
+	return result
+end
 
-return Slab
+function TablePool:push(t)
+	local count = self[0] + 1
+	self[count], self[0] = t, count
+end
+
+return function()
+	return setmetatable({ [0] = 0 }, TablePool)
+end

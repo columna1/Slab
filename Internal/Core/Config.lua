@@ -2,7 +2,7 @@
 
 MIT License
 
-Copyright (c) 2019 Mitchell Davis <coding.jackalope@gmail.com>
+Copyright (c) 2019-2021 Love2D Community <love2d.org>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -61,6 +61,21 @@ local function IsArray(Table)
 	return false
 end
 
+local function EncodeValue(Value)
+	local Result = ""
+
+	if Value ~= nil then
+		local Type = type(Value)
+		if Type == "boolean" then
+			Result = Value == true and "true" or "false"
+		elseif Type == "number" or Type == "string" then
+			Result = tostring(Value)
+		end
+	end
+
+	return Result
+end
+
 local function EncodePair(Key, Value)
 	local Result = tostring(Key) .. " = "
 
@@ -68,6 +83,17 @@ local function EncodePair(Key, Value)
 		if type(Value) == "table" then
 			if IsArray(Value) then
 				Result = Result .. "(" .. table.concat(Value, ",") .. ")\n"
+			else
+				Result = Result .. "{"
+				local First = true
+				for K, V in pairs(Value) do
+					if not First then
+						Result = Result .. ","
+					end
+					Result = Result .. K .. "=" .. EncodeValue(V)
+					First = false
+				end
+				Result = Result .. "}\n"
 			end
 		elseif IsBasicType(Value) then
 			Result = Result .. tostring(Value) .. "\n"
@@ -127,6 +153,19 @@ local function DecodeArray(Value)
 	return Result
 end
 
+local function DecodeTable(Value)
+	local Result = nil
+
+	if string.sub(Value, 1, 1) == "{" then
+		Result = {}
+		for K, V in string.gmatch(Value, "(%w+)=(%-?%w+)") do
+			Result[K] = DecodeValueFn(V)
+		end
+	end
+
+	return Result
+end
+
 local function DecodeValue(Value)
 	if Value ~= nil and Value ~= "" then
 		local Number = tonumber(Value)
@@ -139,9 +178,18 @@ local function DecodeValue(Value)
 			return Boolean
 		end
 
+		if Value == "nil" then
+			return nil
+		end
+
 		local Array = DecodeArray(Value)
 		if Array ~= nil then
 			return Array
+		end
+
+		local Table = DecodeTable(Value)
+		if Table ~= nil then
+			return Table
 		end
 
 		return Value
@@ -243,14 +291,9 @@ function Config.Decode(Stream)
 	return Result, Error
 end
 
-function Config.LoadFile(Path, UseLoveFS)
+function Config.LoadFile(Path, IsDefault)
 	local Result = nil
-	local Contents, Error = nil, nil
-	if UseLoveFS then
-		Contents, Error = love.filesystem.read('string', Path)
-	else
-		Contents, Error = FileSystem.ReadContents(Path)
-	end
+	local Contents, Error = FileSystem.ReadContents(Path, nil, IsDefault)
 	if Contents ~= nil then
 		Result, Error = Config.Decode(Contents)
 	end
@@ -258,12 +301,11 @@ function Config.LoadFile(Path, UseLoveFS)
 	return Result, Error
 end
 
-function Config.Save(Path, Table)
-	local Result = false
-	local Error = ""
+function Config.Save(Path, Table, IsDefault)
+	local Result, Error = false
 	if Table ~= nil then
 		local Contents = Config.Encode(Table)
-		Result, Error = FileSystem.SaveContents(Path, Contents)
+		Result, Error = FileSystem.SaveContents(Path, Contents, IsDefault)
 	else
 		Error = "Invalid table given to Config.Save!"
 	end
