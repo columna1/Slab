@@ -76,6 +76,7 @@ local DragDelta = 0
 
 local MIN_WIDTH = 150.0
 local DEF_PW_CHAR = "*"
+local LINE_NUMBER_W = 32
 
 local function SanitizeText(Data)
 	local Result = false
@@ -88,6 +89,25 @@ local function SanitizeText(Data)
 
 	return Data, Result
 end
+
+local function UpdateLineNumbers(Instance, W, H, n_right, color)
+	if not Instance.LineNumbers then return end
+	n_right = n_right or 0
+	local n_lines = max(H/Text.GetHeight(), n_right)
+	local line_numbers = {}
+	for i = 0, n_lines do
+		table.insert(line_numbers, Instance.LineNumbersStart + i)
+	end
+
+	local lines = table.concat(line_numbers, "\r\n")
+	if color then
+		local colored_lines = {color, lines}
+		Instance.LineNumbersObject:setf(colored_lines, W - 2, "right")
+	else
+		Instance.LineNumbersObject:setf(lines, W - 2, "right")
+	end
+end
+
 
 local function GetDisplayCharacter(Data, Pos)
 	local Result = ''
@@ -121,33 +141,32 @@ local function GetCharacter(Data, Index, Forward)
 end
 
 local function UpdateMultiLinePosition(Instance)
-	if Instance ~= nil then
-		if Instance.Lines ~= nil then
-			local Count = 0
-			local Start = 0
-			local Found = false
-			for I, V in ipairs(Instance.Lines) do
-				local Length = len(V)
-				Count = Count + Length
-				if TextCursorPos < Count then
-					TextCursorPosLine = TextCursorPos - Start
-					TextCursorPosLineNumber = I
-					Found = true
-					break
-				end
-				Start = Start + Length
+	if Instance == nil then return end
+	if Instance.Lines ~= nil then
+		local Count = 0
+		local Start = 0
+		local Found = false
+		for I, V in ipairs(Instance.Lines) do
+			local Length = len(V)
+			Count = Count + Length
+			if TextCursorPos < Count then
+				TextCursorPosLine = TextCursorPos - Start
+				TextCursorPosLineNumber = I
+				Found = true
+				break
 			end
-
-			if not Found then
-				TextCursorPosLine = len(Instance.Lines[#Instance.Lines])
-				TextCursorPosLineNumber = #Instance.Lines
-			end
-		else
-			TextCursorPosLine = TextCursorPos
-			TextCursorPosLineNumber = 1
+			Start = Start + Length
 		end
-		TextCursorPosLineMax = TextCursorPosLine
+
+		if not Found then
+			TextCursorPosLine = len(Instance.Lines[#Instance.Lines])
+			TextCursorPosLineNumber = #Instance.Lines
+		end
+	else
+		TextCursorPosLine = TextCursorPos
+		TextCursorPosLineNumber = 1
 	end
+	TextCursorPosLineMax = TextCursorPosLine
 end
 
 local function ValidateTextCursorPos(Instance)
@@ -268,35 +287,34 @@ local function GetSelection(Instance)
 end
 
 local function MoveCursorVertical(Instance, MoveDown)
-	if Instance ~= nil and Instance.Lines ~= nil then
-		local OldLineNumber = TextCursorPosLineNumber
-		if MoveDown then
-			TextCursorPosLineNumber = min(TextCursorPosLineNumber + 1, #Instance.Lines)
+	if (Instance == nil) or (Instance.Lines == nil) then return end
+	local OldLineNumber = TextCursorPosLineNumber
+	if MoveDown then
+		TextCursorPosLineNumber = min(TextCursorPosLineNumber + 1, #Instance.Lines)
+	else
+		TextCursorPosLineNumber = max(1, TextCursorPosLineNumber - 1)
+	end
+	local Line = Instance.Lines[TextCursorPosLineNumber]
+	if OldLineNumber == TextCursorPosLineNumber then
+		TextCursorPosLine = MoveDown and len(Line) or 0
+	else
+		if TextCursorPosLineNumber == #Instance.Lines and TextCursorPosLine >= len(Line) then
+			TextCursorPosLine = len(Line)
 		else
-			TextCursorPosLineNumber = max(1, TextCursorPosLineNumber - 1)
-		end
-		local Line = Instance.Lines[TextCursorPosLineNumber]
-		if OldLineNumber == TextCursorPosLineNumber then
-			TextCursorPosLine = MoveDown and len(Line) or 0
-		else
-			if TextCursorPosLineNumber == #Instance.Lines and TextCursorPosLine >= len(Line) then
-				TextCursorPosLine = len(Line)
-			else
-				TextCursorPosLine = min(len(Line), TextCursorPosLineMax + 1)
-				local Ch = GetCharacter(Line, TextCursorPosLine)
-				if Ch ~= nil then
-					TextCursorPosLine = TextCursorPosLine - len(Ch)
-				end
+			TextCursorPosLine = min(len(Line), TextCursorPosLineMax + 1)
+			local Ch = GetCharacter(Line, TextCursorPosLine)
+			if Ch ~= nil then
+				TextCursorPosLine = TextCursorPosLine - len(Ch)
 			end
 		end
-		local Start = 0
-		for I, V in ipairs(Instance.Lines) do
-			if I == TextCursorPosLineNumber then
-				TextCursorPos = Start + TextCursorPosLine
-				break
-			end
-			Start = Start + len(V)
+	end
+	local Start = 0
+	for I, V in ipairs(Instance.Lines) do
+		if I == TextCursorPosLineNumber then
+			TextCursorPos = Start + TextCursorPosLine
+			break
 		end
+		Start = Start + len(V)
 	end
 end
 
@@ -559,36 +577,38 @@ local function MoveCursorPage(Instance, PageDown)
 end
 
 local function UpdateTransform(Instance)
-	if Instance ~= nil then
-		local X, Y = GetCursorPos(Instance)
+	if Instance == nil then return end
+	local X, Y = GetCursorPos(Instance)
 
-		local TX, TY = Region.InverseTransform(Instance.Id, 0.0, 0.0)
-		local W = TX + Instance.W - Region.GetScrollPad() - Region.GetScrollBarSize()
-		local H = TY + Instance.H
+	local TX, TY = Region.InverseTransform(Instance.Id, 0.0, 0.0)
+	local W = TX + Instance.W - Region.GetScrollPad() - Region.GetScrollBarSize()
+	local H = TY + Instance.H
 
-		if Instance.H > Text.GetHeight() then
-			H = H - Region.GetScrollPad() - Region.GetScrollBarSize()
-		end
+	if Instance.H > Text.GetHeight() then
+		H = H - Region.GetScrollPad() - Region.GetScrollBarSize()
+	end
 
-		local NewX = 0.0
-		if TextCursorPosLine == 0 then
-			NewX = TX
-		elseif X > W then
-			NewX = -(X - W)
-		elseif X < TX then
-			NewX = TX - X
-		end
+	local NewX = 0.0
+	if TextCursorPosLine == 0 then
+		NewX = TX
+	elseif X > W then
+		NewX = -(X - W)
+	elseif X < TX then
+		NewX = TX - X
+	end
 
-		local NewY = 0.0
-		if TextCursorPosLineNumber == 1 then
-			NewY = TY
-		elseif Y > H then
-			NewY = -(Y - H)
-		elseif Y < TY then
-			NewY = TY - Y
-		end
+	local NewY = 0.0
+	if TextCursorPosLineNumber == 1 then
+		NewY = TY
+	elseif Y > H then
+		NewY = -(Y - H)
+	elseif Y < TY then
+		NewY = TY - Y
+	end
 
-		Region.Translate(Instance.Id, NewX, NewY)
+	Region.Translate(Instance.Id, NewX, NewY)
+	if Instance.LineNumbers then
+		Region.Translate(Instance.Id .. "LineNumbers", NewX, NewY)
 	end
 end
 
@@ -626,6 +646,13 @@ local function DeleteSelection(Instance)
 		local Left = sub(Instance.Text, 1, Min)
 		local Right = sub(Instance.Text, Max)
 		Instance.Text = Left .. Right
+
+		if Instance.IsPassword then
+			local Left = sub(Instance.OrigText, 1, Min)
+			local Right = sub(Instance.OrigText, Max)
+			Instance.OrigText = Left .. Right
+			Instance.PasswordText = string.rep(Instance.PasswordChar, #Instance.OrigText)
+		end
 
 		TextCursorPos = len(Left)
 
@@ -713,111 +740,108 @@ local function IsHighlightTerminator(Ch)
 end
 
 local function UpdateTextObject(Instance, Width, Align, Highlight, BaseColor)
-	if Instance ~= nil and Instance.TextObject ~= nil then
-		local ColoredText = {}
+	if (Instance == nil) or (Instance.TextObject == nil) then return end
 
-		if Highlight == nil then
-			ColoredText = {BaseColor, Instance.Text}
-		else
-			--local StartTime = love.timer.getTime()
+	local ColoredText = {}
 
-			local TX, TY = Region.InverseTransform(Instance.Id, 0, 0)
-			local TextH = Text.GetHeight()
-			local Top = TY - TextH * 2
-			local Bottom = TY + Instance.H + TextH * 2
-			if not Instance.Lines then Instance.Lines = {} end
-			local H = #Instance.Lines * TextH
-			local TopLineNo = max(floor((Top / H) * #Instance.Lines), 1)
-			local BottomLineNo = min(floor((Bottom / H) * #Instance.Lines), #Instance.Lines)
+	if Highlight ~= nil then
+		--local StartTime = love.timer.getTime()
 
-			local Index = 1
-			local EndIndex = 1
-			for I = 1, BottomLineNo, 1 do
-				local Count = len(Instance.Lines[I])
-				if I < TopLineNo then
-					Index = Index + Count
-				end
+		local _, TY = Region.InverseTransform(Instance.Id, 0, 0)
+		local TextH = Text.GetHeight()
+		local Top = TY - TextH * 2
+		local Bottom = TY + Instance.H + TextH * 2
+		local H = #Instance.Lines * TextH
+		local TopLineNo = max(floor((Top / H) * #Instance.Lines), 1)
+		local BottomLineNo = min(floor((Bottom / H) * #Instance.Lines), #Instance.Lines)
 
-				EndIndex = EndIndex + Count
+		local Index = 1
+		local EndIndex = 1
+		for I = 1, BottomLineNo, 1 do
+			local Count = len(Instance.Lines[I])
+			if I < TopLineNo then
+				Index = Index + Count
 			end
 
-			if Index > 1 then
-				insert(ColoredText, BaseColor)
-				insert(ColoredText, sub(Instance.Text, 1, Index - 1))
-			end
+			EndIndex = EndIndex + Count
+		end
 
-			while Index < EndIndex do
-				local MatchIndex = nil
-				local Key = nil
-				for K, V in pairs(Highlight) do
-					local Found = nil
-					local Anchor = Index
-					repeat
-						Found = find(Instance.Text, K, Anchor, true)
+		if Index > 1 then
+			insert(ColoredText, BaseColor)
+			insert(ColoredText, sub(Instance.Text, 1, Index - 1))
+		end
 
-						if Found ~= nil then
-							local FoundEnd = Found + len(K)
-							local Prev = sub(Instance.Text, Found - 1, Found - 1)
-							local Next = sub(Instance.Text, FoundEnd, FoundEnd)
-
-							if Found == 1 then
-								Prev = nil
-							end
-
-							if FoundEnd > len(Instance.Text) then
-								Next = nil
-							end
-
-							if not (IsHighlightTerminator(Prev) and IsHighlightTerminator(Next)) then
-								Anchor = Found + 1
-								Found = nil
-							end
-						else
-							break
-						end
-					until Found ~= nil
+		while Index < EndIndex do
+			local MatchIndex = nil
+			local Key = nil
+			for K, V in pairs(Highlight) do
+				local Found = nil
+				local Anchor = Index
+				repeat
+					Found = find(Instance.Text, K, Anchor, true)
 
 					if Found ~= nil then
-						if MatchIndex == nil then
-							MatchIndex = Found
-							Key = K
-						elseif Found < MatchIndex then
-							MatchIndex = Found
-							Key = K
+						local FoundEnd = Found + len(K)
+						local Prev = sub(Instance.Text, Found - 1, Found - 1)
+						local Next = sub(Instance.Text, FoundEnd, FoundEnd)
+
+						if Found == 1 then
+							Prev = nil
 						end
+
+						if FoundEnd > len(Instance.Text) then
+							Next = nil
+						end
+
+						if not (IsHighlightTerminator(Prev) and IsHighlightTerminator(Next)) then
+							Anchor = Found + 1
+							Found = nil
+						end
+					else
+						break
+					end
+				until Found ~= nil
+
+				if Found ~= nil then
+					if MatchIndex == nil then
+						MatchIndex = Found
+						Key = K
+					elseif Found < MatchIndex then
+						MatchIndex = Found
+						Key = K
 					end
 				end
-
-				if Key ~= nil then
-					insert(ColoredText, BaseColor)
-					insert(ColoredText, sub(Instance.Text, Index, MatchIndex - 1))
-
-					insert(ColoredText, Highlight[Key])
-					insert(ColoredText, Key)
-
-					Index = MatchIndex + len(Key)
-				else
-					insert(ColoredText, BaseColor)
-					insert(ColoredText, sub(Instance.Text, Index, EndIndex))
-					Index = EndIndex
-					break
-				end
 			end
 
-			if Index < len(Instance.Text) then
+			if Key ~= nil then
 				insert(ColoredText, BaseColor)
-				insert(ColoredText, sub(Instance.Text, Index))
+				insert(ColoredText, sub(Instance.Text, Index, MatchIndex - 1))
+
+				insert(ColoredText, Highlight[Key])
+				insert(ColoredText, Key)
+
+				Index = MatchIndex + len(Key)
+			else
+				insert(ColoredText, BaseColor)
+				insert(ColoredText, sub(Instance.Text, Index, EndIndex))
+				Index = EndIndex
+				break
 			end
-
-			--print(string.format("UpdateTextObject Time: %f", (love.timer.getTime() - StartTime)))
 		end
 
-		if #ColoredText == 0 then
-			ColoredText = {BaseColor, Instance.Text}
+		if Index < len(Instance.Text) then
+			insert(ColoredText, BaseColor)
+			insert(ColoredText, sub(Instance.Text, Index))
 		end
 
-		Instance.TextObject:setf(ColoredText, Width, Align)
+		--print(string.format("UpdateTextObject Time: %f", (love.timer.getTime() - StartTime)))
 	end
+
+	if #ColoredText == 0 then
+		ColoredText = {BaseColor, Instance.Text}
+	end
+
+	Instance.TextObject:setf(ColoredText, Width, Align)
 end
 
 local function UpdateSlider(Instance, Precision)
@@ -828,7 +852,7 @@ local function UpdateSlider(Instance, Precision)
 			Flag = DeltaX ~= 0.0
 		end
 		if Flag then
-			local MouseX, MouseY = Mouse.Position()
+			local MouseX, _ = Mouse.Position()
 			local MinX = Cursor.GetPosition()
 			local MaxX = MinX + Instance.W
 			local Ratio = Utility.Clamp((MouseX - MinX) / (MaxX - MinX), 0.0, 1.0)
@@ -901,7 +925,7 @@ local function DrawSlider(Instance, DrawSliderAsHandle)
 end
 
 local function GetInstance(Id)
-	for I, V in ipairs(Instances) do
+	for _, V in ipairs(Instances) do
 		if V.Id == Id then
 			return V
 		end
@@ -909,6 +933,8 @@ local function GetInstance(Id)
 	local Instance = {}
 	Instance.Id = Id
 	Instance.Text = ""
+	Instance.OrigText = ""
+	Instance.PasswordText = ""
 	Instance.TextChanged = false
 	Instance.NumbersOnly = true
 	Instance.ReadOnly = false
@@ -919,6 +945,9 @@ local function GetInstance(Id)
 	Instance.TextObject = nil
 	Instance.Highlight = nil
 	Instance.ShouldUpdateTextObject = false
+	Instance.LineNumbers = false
+	Instance.LineNumbersStart = Instance.LineNumbers and 1 or nil
+	Instance.LineNumbersObject = nil
 	insert(Instances, Instance)
 	return Instance
 end
@@ -945,6 +974,8 @@ function Input.Begin(Id, Options)
 	Options.MaxNumber = Options.MaxNumber
 	Options.MultiLine = Options.MultiLine or false
 	Options.MultiLineW = Options.MultiLineW or huge
+	Options.LineNumbers = Options.LineNumbers
+	Options.LineNumbersStart = Options.LineNumbersStart or 1
 	Options.Highlight = Options.Highlight
 	Options.Step = Options.Step or 1.0
 	Options.NoDrag = Options.NoDrag or false
@@ -953,11 +984,6 @@ function Input.Begin(Id, Options)
 	Options.NeedDrag = Options.NeedDrag == nil and true or Options.NeedDrag
 	Options.IsPassword = not not Options.IsPassword --default is false
 	Options.PasswordChar = Options.IsPassword and Options.PasswordChar or DEF_PW_CHAR
-
-	if Options.IsPassword then
-		Options.OrigText = Options.Text
-		Options.Text = string.rep(Options.PasswordChar, #Options.Text)
-	end
 
 	if type(Options.MinNumber) ~= "number" then
 		Options.MinNumber = nil
@@ -978,7 +1004,11 @@ function Input.Begin(Id, Options)
 	Instance.MinNumber = Options.MinNumber
 	Instance.MaxNumber = Options.MaxNumber
 	Instance.MultiLine = Options.MultiLine
+	Instance.LineNumbers = Options.LineNumbers
+	Instance.LineNumbersStart = Options.LineNumbersStart
 	Instance.NeedDrag = Options.NeedDrag
+	Instance.IsPassword = Options.IsPassword
+	Instance.PasswordChar = Options.PasswordChar
 
 	if Instance.MultiLineW ~= Options.MultiLineW then
 		Instance.Lines = nil
@@ -1007,6 +1037,10 @@ function Input.Begin(Id, Options)
 		end
 
 		Instance.Text = Options.Text == nil and Instance.Text or Options.Text
+
+		if Options.IsPassword then
+			Instance.Text = Instance.PasswordText == nil and Instance.Text or Instance.PasswordText
+		end
 	end
 
 	if Instance.MinNumber ~= nil and Instance.MaxNumber ~= nil then
@@ -1042,14 +1076,19 @@ function Input.Begin(Id, Options)
 	local ShouldUpdateTextObject = Instance.ShouldUpdateTextObject
 	Instance.ShouldUpdateTextObject = false
 
-	if Instance.Lines == nil and Instance.Text ~= "" then
-		if Options.MultiLine then
-			if Instance.TextObject == nil then
-				Instance.TextObject = love.graphics.newText(Style.Font)
-			end
-			Instance.Lines = Text.GetLines(Instance.Text, Options.MultiLineW)
-			ContentH = #Instance.Lines * Text.GetHeight()
-			ShouldUpdateTextObject = true
+	if Options.MultiLine and (Instance.Lines == nil) and (Instance.Text ~= "") then
+		if Instance.TextObject == nil then
+			Instance.TextObject = love.graphics.newText(Style.Font)
+		end
+		Instance.Lines = Text.GetLines(Instance.Text, Options.MultiLineW)
+		ContentH = #Instance.Lines * Text.GetHeight()
+		ShouldUpdateTextObject = true
+	end
+
+	if Instance.MultiLine and Instance.LineNumbers then
+		if Instance.LineNumbersObject == nil then
+			Instance.LineNumbersObject = love.graphics.newText(Style.Font)
+			UpdateLineNumbers(Instance, LINE_NUMBER_W, H, nil, Options.TextColor)
 		end
 	end
 
@@ -1080,7 +1119,14 @@ function Input.Begin(Id, Options)
 	end
 
 	if ShouldUpdateTextObject then
-		UpdateTextObject(Instance, Options.MultiLineW, Instance.Align, Options.Highlight, Options.TextColor)
+		UpdateLineNumbers(Instance, LINE_NUMBER_W, H, nil, Options.TextColor)
+		UpdateTextObject(
+			Instance,
+			Options.MultiLineW,
+			Instance.Align,
+			Options.Highlight,
+			Options.TextColor
+		)
 	end
 
 	local IsObstructed = Window.IsObstructedAtMouse()
@@ -1128,10 +1174,10 @@ function Input.Begin(Id, Options)
 
 	if Instance == Focused then
 		local Back = false
-		local IgnoreBack = false
+		-- local IgnoreBack = false
 		local ShouldDelete = false
 		local ShouldUpdateTransform = false
-		local PreviousTextCursorPos = TextCursorPos
+		-- local PreviousTextCursorPos = TextCursorPos
 
 		if IsCommandKeyDown() then
 			if Keyboard.IsPressed('x') or Keyboard.IsPressed('c') then
@@ -1303,7 +1349,7 @@ function Input.Begin(Id, Options)
 			DragSelect = false
 		end
 
-		if Keyboard.IsPressed('return') then
+		if Keyboard.IsPressed("return") or Keyboard.IsPressed("kpenter") then
 			Result = true
 			if Options.MultiLine then
 				Input.Text('\n')
@@ -1319,7 +1365,20 @@ function Input.Begin(Id, Options)
 
 			if Options.MultiLine then
 				Instance.Lines = Text.GetLines(Instance.Text, Options.MultiLineW)
-				UpdateTextObject(Instance, Options.MultiLineW, Instance.Align, Options.Highlight, Options.TextColor)
+				UpdateLineNumbers(
+					Instance,
+					LINE_NUMBER_W,
+					H,
+					#Instance.Lines,
+					Options.TextColor
+				)
+				UpdateTextObject(
+					Instance,
+					Options.MultiLineW,
+					Instance.Align,
+					Options.Highlight,
+					Options.TextColor
+				)
 			end
 
 			UpdateMultiLinePosition(Instance)
@@ -1358,6 +1417,34 @@ function Input.Begin(Id, Options)
 	end
 
 	local TX, TY = Window.TransformPoint(X, Y)
+	if Instance.LineNumbers and (Instance.LineNumbersObject ~= nil) then
+		Region.Begin(Instance.Id .. "LineNumbers", {
+			X = X,
+			Y = Y,
+			W = LINE_NUMBER_W,
+			H = H,
+			ContentW = ContentW + Pad,
+			ContentH = ContentH + Pad,
+			BgColor = Options.BgColor,
+			SX = TX,
+			SY = TY,
+			MouseX = MouseX,
+			MouseY = MouseY,
+			Intersect = true,
+			IgnoreScroll = true,
+			Rounding = Options.Rounding,
+			IsObstructed = IsObstructed,
+			AutoSizeContent = false
+		})
+			LayoutManager.Begin("IgnoreLineNumbers", {Ignore = true})
+			Text.BeginObject(Instance.LineNumbersObject)
+			LayoutManager.End()
+		Region.End()
+		Region.ApplyScissor()
+		X = X + LINE_NUMBER_W
+	end
+
+	TX, TY = Window.TransformPoint(X, Y)
 	Region.Begin(Instance.Id, {
 		X = X,
 		Y = Y,
@@ -1392,12 +1479,14 @@ function Input.Begin(Id, Options)
 	if Instance.Text ~= "" then
 		Cursor.SetPosition(X + GetAlignmentOffset(Instance), Y)
 
-		LayoutManager.Begin('Ignore', {Ignore = true})
+		LayoutManager.Begin("Ignore", {Ignore = true})
+
 		if Instance.TextObject ~= nil then
 			Text.BeginObject(Instance.TextObject)
 		else
 			Text.Begin(Instance.Text, {AddItem = false, Color = Options.TextColor})
 		end
+
 		LayoutManager.End()
 	end
 	Region.End()
@@ -1445,11 +1534,22 @@ function Input.Text(Ch)
 
 		if TextCursorPos == 0 then
 			Focused.Text = Ch .. Focused.Text
+			Focused.OrigText = Ch .. Focused.OrigText
 		else
-			local Temp = Focused.Text
-			local Left = sub(Temp, 0, TextCursorPos)
-			local Right = sub(Temp, TextCursorPos + 1)
+			local Left = sub(Focused.Text, 0, TextCursorPos)
+			local Right = sub(Focused.Text, TextCursorPos + 1)
 			Focused.Text = Left .. Ch .. Right
+
+			if Focused.IsPassword then
+				local Left = sub(Focused.OrigText, 0, TextCursorPos)
+				local Right = sub(Focused.OrigText, TextCursorPos + 1)
+				Focused.OrigText = Left .. Ch .. Right
+			end
+		end
+
+		if Focused.IsPassword then
+			Focused.PasswordText = string.rep(Focused.PasswordChar, #Focused.OrigText)
+			Focused.Text = Focused.PasswordText
 		end
 
 		TextCursorPos = min(TextCursorPos + len(Ch), len(Focused.Text))

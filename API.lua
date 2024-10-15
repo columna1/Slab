@@ -247,6 +247,8 @@ local IsDefault = true
 local QuitFn = nil
 local Verbose = false
 local Initialized = false
+local DontInterceptEventHandlers = false
+
 
 local ModifyCursor = true
 
@@ -282,7 +284,7 @@ end
 local function TextInput(Ch)
 	Input.Text(Ch)
 
-	if love.textinput ~= nil then
+	if (not DontInterceptEventHandlers) and love.textinput ~= nil then
 		love.textinput(Ch)
 	end
 end
@@ -290,7 +292,7 @@ end
 local function WheelMoved(X, Y)
 	Window.WheelMoved(X, Y)
 
-	if love.wheelmoved ~= nil then
+	if (not DontInterceptEventHandlers) and love.wheelmoved ~= nil then
 		love.wheelmoved(X, Y)
 	end
 end
@@ -334,6 +336,7 @@ function Slab.Initialize(args, dontInterceptEventHandlers)
 		return
 	end
 
+	DontInterceptEventHandlers = dontInterceptEventHandlers
 	Style.API.Initialize()
 
 	args = args or {}
@@ -462,10 +465,12 @@ function Slab.Draw()
 		Button.ClearClicked()
 	end
 
+	love.graphics.setColor(1, 1, 1, 1)
 	love.graphics.push()
 	love.graphics.origin()
 	DrawCommands.Execute()
 	love.graphics.pop()
+	love.graphics.setColor(1, 1, 1, 1)
 
 	Stats.End(StatHandle)
 
@@ -640,6 +645,8 @@ end
 		NoSavedSettings: [Boolean] Flag to disable saving this window's settings to the state INI file.
 		ConstrainPosition: [Boolean] Flag to constrain the position of the window to the bounds of the viewport.
 		ShowMinimize: [Boolean] Flag to show a minimize button in the title bar of the window. Default is `true`.
+		ShowScrollbarX: [Boolean] Flag to show the horizontal scrollbar regardless of the window and content internal state. Default is `false`
+		ShowScrollbarY: [Boolean] Flag to show the vertical scrollbar regardless of the window and content internal state. Default is `false`
 
 	Return: [Boolean] The open state of this window. Useful for simplifying API calls by storing the result in a flag instead of a table.
 		EndWindow must still be called regardless of the result for this value.
@@ -765,7 +772,11 @@ end
 	Return: [Boolean] Returns true if the main menu bar process has started.
 --]]
 function Slab.BeginMainMenuBar()
-	Cursor.SetPosition(0.0, 0.0)
+	local X,Y = 0.0, 0.0
+	if Utility.IsMobile() then
+		X, Y = love.window.getSafeArea()
+	end
+	Cursor.SetPosition(X, Y)
 	return Slab.BeginMenuBar(true)
 end
 
